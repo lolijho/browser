@@ -58,6 +58,21 @@ export {
   type SyncConflict,
 } from "./sync.js";
 export {
+  aiPrivacyModeSchema,
+  privacySettingsSchema,
+  DEFAULT_PRIVACY_SETTINGS,
+  setPrivacyModeRequestSchema,
+  permissionKindSchema,
+  permissionDecisionRequestSchema,
+  revokePermissionRequestSchema,
+  type AiPrivacyMode,
+  type PrivacySettings,
+  type SetPrivacyModeRequest,
+  type PermissionKindSchema,
+  type PermissionDecisionRequest,
+  type RevokePermissionRequest,
+} from "./privacy.js";
+export {
   planSchema,
   adminUserRowSchema,
   adminOrganizationRowSchema,

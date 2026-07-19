@@ -1,7 +1,8 @@
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { BrowserWindow, Menu, app, ipcMain, session, type Session } from "electron";
 import { IPC_CHANNELS, IPC_EVENTS, type UiCommand } from "@businessbox/contracts";
-import { BRANDING } from "@businessbox/shared";
+import { WORKSPACE_SESSION_PREFIX, BRANDING } from "@businessbox/shared";
 import { ConfigurableSearchEngineManager } from "@businessbox/search";
 import { buildAppInfo } from "./app-info";
 import { BrowserController } from "./browser/browser-controller";
@@ -10,15 +11,70 @@ import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
 import { registerBrowserIpc } from "./ipc";
 import { buildApplicationMenu } from "./menu";
 import { PersistenceService } from "./persistence";
+import { PermissionManager, type PermissionKind } from "./security/permission-manager";
+import { isRiskyDownload, sanitizeFilename, uniqueFilename } from "./security/download-safety";
 
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
 
-/** Crea la sessione di un workspace con permessi deny-by-default. */
+/** Permessi browser (fase 07): deny-by-default, decisi per dominio+workspace. */
+const permissionManager = new PermissionManager();
+
+/** Mappa i nomi permesso di Electron ai nostri PermissionKind sorvegliati. */
+function toPermissionKind(electronPermission: string): PermissionKind | null {
+  const map: Record<string, PermissionKind> = {
+    media: "camera",
+    audioCapture: "microphone",
+    videoCapture: "camera",
+    geolocation: "geolocation",
+    notifications: "notifications",
+    midi: "midi",
+    midiSysex: "midi",
+    "clipboard-read": "clipboard-read",
+    "display-capture": "display-capture",
+  };
+  return map[electronPermission] ?? null;
+}
+
+/**
+ * Crea la sessione di un workspace con permessi deny-by-default.
+ * Un permesso è concesso solo se l'utente lo ha esplicitamente approvato per
+ * quel (dominio, workspace); ogni altro caso è negato. I download passano dal
+ * controllo di sicurezza (estensioni rischiose, nomi sanitizzati).
+ */
 function createWorkspaceSession(partition: string): Session {
   const workspaceSession = session.fromPartition(partition);
-  workspaceSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  workspaceSession.setPermissionCheckHandler(() => false);
+  const workspaceId = partition.startsWith(WORKSPACE_SESSION_PREFIX)
+    ? partition.slice(WORKSPACE_SESSION_PREFIX.length)
+    : partition;
+
+  workspaceSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    const kind = toPermissionKind(permission);
+    const requestingUrl = details?.requestingUrl ?? "";
+    if (!kind) {
+      callback(false);
+      return;
+    }
+    // Deny-by-default: concesso solo se già approvato per dominio+workspace.
+    callback(permissionManager.check(workspaceId, requestingUrl, kind) === "granted");
+  });
+  workspaceSession.setPermissionCheckHandler((_wc, permission, origin) => {
+    const kind = toPermissionKind(permission);
+    return kind !== null && permissionManager.check(workspaceId, origin, kind) === "granted";
+  });
+
+  workspaceSession.on("will-download", (_event, item) => {
+    const safeName = uniqueFilename(sanitizeFilename(item.getFilename()), (name) =>
+      existsSync(join(app.getPath("downloads"), name)),
+    );
+    item.setSavePath(join(app.getPath("downloads"), safeName));
+    if (isRiskyDownload(safeName)) {
+      // Nessuna esecuzione automatica: il file viene solo salvato; la conferma
+      // esplicita per le estensioni rischiose è gestita dalla UI di download.
+      console.warn(`[download] estensione rischiosa: ${safeName} (nessuna esecuzione automatica)`);
+    }
+  });
+
   return workspaceSession;
 }
 

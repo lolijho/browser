@@ -13,10 +13,53 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 04   | Persistenza locale, estrazione e memoria   | ✅ completata                       |
 | 05   | AI con GLM 5.2 tramite OpenRouter          | 🟡 nucleo completato (v. dettaglio) |
 | 06   | Backend, autenticazione e sincronizzazione | ✅ completata                       |
-| 07   | Hardening di sicurezza e privacy           | ⬜ da iniziare                      |
+| 07   | Hardening di sicurezza e privacy           | ✅ completata                       |
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare                      |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare                      |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+
+## Fase 07 — dettaglio (2026-07-19)
+
+### Fatto
+
+- **Documentazione**: `docs/SECURITY.md`, `docs/THREAT_MODEL.md` (19 categorie +
+  confini di fiducia + rischi residui reali), `docs/PRIVACY_ARCHITECTURE.md`,
+  `docs/INCIDENT_RESPONSE.md`.
+- **Permessi deny-by-default** (`PermissionManager`, puro e testato): decisioni
+  per **(dominio, workspace)**, revocabili (per permesso o per dominio); camera,
+  microfono, geolocalizzazione, notifiche, MIDI, clipboard avanzata, screen
+  capture; origini non http/https sempre negate. Collegato ai
+  `setPermissionRequestHandler`/`setPermissionCheckHandler` delle sessioni.
+- **Tre modalità privacy AI** (`resolveAiPolicy`, testato): cloud-ai / confirm
+  (default) / local-only; più modalità privata (AI off salvo consenso
+  temporaneo, `allowAI=false` → blocco). Applicabile in UI e server-side.
+- **Modalità privata** (architettura documentata): sessione in memoria senza
+  `persist:`, niente cronologia/screenshot/sync/suggerimenti remoti.
+- **Sanitizzazione estesa**: `sanitizeUrlForLog` (redazione parametri sensibili
+  - fragment) e `sanitizeForLog` (righe di log), oltre a `sanitizeContentForAI`.
+- **Download manager sicuro** (`download-safety`, testato): estensioni rischiose
+  segnalate, `sanitizeFilename` (niente path traversal/control char), nomi
+  duplicati sicuri, nessuna esecuzione automatica; collegato a `will-download`.
+- **Verifica hardening esistente**: sandbox, contextIsolation, IPC allowlist+Zod
+  con verifica mittente, `setWindowOpenHandler`, navigazione http/https,
+  `will-attach-webview` bloccato, nessun bypass TLS, query PostgreSQL
+  parametrizzate, chiave OpenRouter solo server-side, policy AI server-side.
+
+### Test eseguiti (fase 07)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 17/17 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **160 test** (desktop 38: permessi deny-by-default per
+  dominio+workspace, concessione/revoca, origini non http negate, download
+  rischiosi/sanitizzazione/nomi unici; ai 22: privacy modes, sanitizzazione
+  URL/log; più i test di sicurezza già esistenti — IPC mittente, protocolli,
+  template motori, prompt injection, isolamento tenant).
+
+### Note
+
+- La UI dei prompt permessi e del selettore modalità privata è predisposta lato
+  logica; il collegamento visuale completo (dialoghi di richiesta, toggle
+  modalità privata in barra) prosegue insieme alle rifiniture della fase 10.
+- Rate limiting auth: previsto a livello reverse proxy (Coolify, fase 08).
 
 ## Fase 06 — dettaglio (2026-07-19)
 

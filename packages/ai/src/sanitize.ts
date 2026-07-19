@@ -27,6 +27,39 @@ export function sanitizeContentForAI(text: string): string {
   );
 }
 
+/** Parametri di query considerati sensibili (redatti in URL prima di log/sync). */
+const SENSITIVE_QUERY_PARAMS =
+  /^(password|passwd|pwd|token|secret|api_?key|apikey|auth|authorization|session|sessionid|sid|code|state|access_token|refresh_token|id_token|otp|cvv|card)$/i;
+
+/**
+ * URL sicuro per log/sync (prompt 07): rimuove i valori dei parametri sensibili
+ * e i fragment, conservando host e path per la diagnostica.
+ */
+export function sanitizeUrlForLog(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (SENSITIVE_QUERY_PARAMS.test(key)) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
+    }
+    return url.toString();
+  } catch {
+    return "[invalid-url]";
+  }
+}
+
+/**
+ * Riga di log sanitizzata (prompt 07): mai password, cookie, token o URL con
+ * query private nei log. Applica la redazione credenziali + URL.
+ */
+export function sanitizeForLog(line: string): string {
+  return sanitizeContentForAI(line).replaceAll(/https?:\/\/[^\s"']+/gi, (match) =>
+    sanitizeUrlForLog(match),
+  );
+}
+
 export const SOURCE_DELIMITER_START = "<<<FONTE";
 export const SOURCE_DELIMITER_END = "<<<FINE-FONTE>>>";
 

@@ -30,6 +30,8 @@ export {
 export { parseSSE } from "./sse.js";
 export {
   sanitizeContentForAI,
+  sanitizeUrlForLog,
+  sanitizeForLog,
   wrapSourcesForPrompt,
   AI_SYSTEM_PROMPT,
   SOURCE_DELIMITER_START,
@@ -42,3 +44,4 @@ export {
   type AiBudgetVerdict,
 } from "./budget.js";
 export { CircuitBreaker, type CircuitBreakerOptions } from "./breaker.js";
+export { resolveAiPolicy, type AiDecision, type AiPolicyInput } from "./policy.js";
