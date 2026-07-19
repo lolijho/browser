@@ -1,0 +1,57 @@
+name: desktop-mac-build
+
+# Build alpha macOS dell'app desktop (non firmata: nessun certificato disponibile).
+# La matrice completa Windows/macOS/Linux con trigger su tag v* arriva nella fase 09.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "claude/**"
+    paths:
+      - "apps/desktop/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - ".github/workflows/desktop-mac-build.yml"
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      # Nessun tentativo di code signing: build alpha dichiaratamente non firmata.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages and desktop bundle
+        run: pnpm exec turbo run build --filter=@businessbox/desktop
+
+      - name: Package macOS app (dmg + zip, arm64 + x64)
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder --mac --publish never
+
+      - name: List artifacts
+        run: ls -la apps/desktop/release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: businessbox-browser-mac
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+          if-no-files-found: error
+          retention-days: 30

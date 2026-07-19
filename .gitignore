@@ -7,6 +7,9 @@ out/
 .next/
 *.tsbuildinfo
 
+# pacchetti desktop (dmg/zip/appimage/exe)
+apps/desktop/release/
+
 # turbo
 .turbo/
 

@@ -72,6 +72,21 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 - `pnpm build` — ✅ 11/11 task (packages tsc, api, worker, admin Next 16, desktop electron-vite).
 - Smoke test worker senza `REDIS_URL` — ✅ esce con codice 0 e messaggio esplicito.
 
+### Aggiunta post-fase 00: packaging macOS anticipato (2026-07-19)
+
+Su richiesta, parte del packaging della fase 09 è stata anticipata:
+
+- `apps/desktop/electron-builder.yml` — config packaging (mac dmg+zip arm64/x64,
+  win NSIS e linux AppImage/deb predisposti), `appId com.businessbox.browser`,
+  output in `apps/desktop/release/` (gitignorata), nessuna firma simulata.
+- Script `build:mac`, `build:win`, `build:linux` in `apps/desktop`.
+- Workflow CI `.github/workflows/desktop-mac-build.yml`: build su runner macOS a ogni
+  push rilevante, artifact scaricabile `businessbox-browser-mac` (dmg+zip, arm64+x64).
+- Documentazione: `docs/DESKTOP_RELEASE.md` (come ottenere/aprire l'app non firmata).
+
+Restano per la fase 09: matrice completa multi-OS su tag `v*`, canali, auto-update,
+firma/notarization con certificati reali.
+
 ### Limitazioni dell'ambiente di sviluppo remoto
 
 - Il binario Electron non è scaricabile in questo ambiente: la egress policy del proxy
