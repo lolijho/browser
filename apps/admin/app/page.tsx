@@ -1,21 +1,28 @@
-import { BRANDING } from "@businessbox/shared";
+import type { ServiceHealth } from "@businessbox/contracts";
+import { adminFetch } from "../lib/api";
+import { Panel, Table } from "./components";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const health = await adminFetch<{ services: ServiceHealth[] }>("/api/v1/admin/health");
   return (
-    <main>
-      <h1>{BRANDING.productName} — Dashboard amministrativa</h1>
-      <p>
-        Fase 00: applicazione minima avviabile. Le sezioni operative (utenti, organizzazioni,
-        dispositivi, consumo AI, code worker, feature flags, audit log) arrivano nella fase 06.
+    <>
+      <h1 style={{ fontSize: "1.4rem" }}>Panoramica</h1>
+      <p style={{ color: "#71717a", fontSize: "0.9rem" }}>
+        Stato dei servizi e accesso alle sezioni amministrative. Gli amministratori non vedono il
+        contenuto privato delle pagine degli utenti.
       </p>
-      <dl>
-        <dt>Canale release</dt>
-        <dd>{BRANDING.releaseChannel}</dd>
-        <dt>API di riferimento</dt>
-        <dd>
-          <code>{process.env.PUBLIC_API_URL ?? BRANDING.defaultApiUrl}</code>
-        </dd>
-      </dl>
-    </main>
+      <Panel
+        title="Salute servizi"
+        result={health}
+        render={(data) => (
+          <Table
+            head={["Servizio", "Stato", "Dettaglio"]}
+            rows={data.services.map((s) => [s.service, s.status, s.detail ?? "—"])}
+          />
+        )}
+      />
+    </>
   );
 }

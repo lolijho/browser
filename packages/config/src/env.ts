@@ -28,6 +28,26 @@ export const workerEnvSchema = z.object({
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
 /**
+ * Variabili backend (prompt 06): auth, database, admin.
+ * Senza DATABASE_URL l'API usa il datastore in-memory (dev/alpha): utile per
+ * provare tutto senza Postgres, ma i dati non sopravvivono al riavvio del server.
+ * In produzione i segreti sono obbligatori (validati con `${VAR:?}` in Coolify).
+ */
+export const serverEnvSchema = z.object({
+  DATABASE_URL: z.url().optional(),
+  JWT_ACCESS_SECRET: z.string().min(16).default("dev-access-secret-change-me-please"),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  JWT_REFRESH_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60 * 60 * 24 * 30),
+  ADMIN_API_KEY: z.string().min(16).optional(),
+  CORS_ALLOWED_ORIGINS: z.string().default(""),
+});
+export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+/**
  * Variabili OpenRouter/AI (prompt 05) — SOLO server-side.
  * OPENROUTER_API_KEY assente ⇒ il backend usa DisabledAIProvider e il
  * browser continua a funzionare senza AI.

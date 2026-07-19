@@ -5,18 +5,21 @@ import {
   livenessResponseSchema,
   readinessResponseSchema,
 } from "@businessbox/contracts";
-import { aiEnvSchema, apiEnvSchema, parseEnv } from "@businessbox/config";
+import { aiEnvSchema, apiEnvSchema, parseEnv, serverEnvSchema } from "@businessbox/config";
 import { AiBudgetTracker, DisabledAIProvider, MockAIProvider } from "@businessbox/ai";
 import { buildServer } from "./server.js";
 
 const TEST_ENV = parseEnv(apiEnvSchema, { NODE_ENV: "test" });
 const TEST_AI_ENV = parseEnv(aiEnvSchema, {});
+const TEST_SERVER_ENV = parseEnv(serverEnvSchema, {
+  ADMIN_API_KEY: "admin-key-di-test-1234567890",
+});
 
 describe("API health endpoints", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = await buildServer(TEST_ENV, TEST_AI_ENV);
+    app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV);
     await app.ready();
   });
 
@@ -49,7 +52,7 @@ describe("API health endpoints", () => {
 
 describe("API AI (fase 05)", () => {
   it("senza chiave OpenRouter l'AI risulta disabled e il server resta sano", async () => {
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV);
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV);
     const health = await app.inject({ method: "GET", url: "/api/v1/ai/health" });
     expect(health.json()).toMatchObject({ status: "disabled" });
     const chat = await app.inject({
@@ -66,7 +69,7 @@ describe("API AI (fase 05)", () => {
   });
 
   it("chat: ritrasmette lo stream SSE con testo, done (fonti usate) e [DONE]", async () => {
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV, {
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
       aiProvider: new MockAIProvider({ chatText: "Ecco il riassunto" }),
     });
     const response = await app.inject({
@@ -86,7 +89,9 @@ describe("API AI (fase 05)", () => {
   });
 
   it("chat: richiesta non valida → 400", async () => {
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV, { aiProvider: new MockAIProvider() });
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
+      aiProvider: new MockAIProvider(),
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/chat",
@@ -97,7 +102,7 @@ describe("API AI (fase 05)", () => {
   });
 
   it("budget esaurito → 429 e il browser può continuare (health ok)", async () => {
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV, {
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
       aiProvider: new MockAIProvider(),
       aiBudget: new AiBudgetTracker({ dailyTokens: 10, perRequestTokens: 5 }),
     });
@@ -113,7 +118,7 @@ describe("API AI (fase 05)", () => {
 
   it("summarize: risponde con riassunto, fonti usate e registra l'uso", async () => {
     const budget = new AiBudgetTracker({ dailyTokens: 100_000, perRequestTokens: 32_000 });
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV, {
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
       aiProvider: new MockAIProvider({ summary: "Sintesi operativa." }),
       aiBudget: budget,
     });
@@ -132,7 +137,9 @@ describe("API AI (fase 05)", () => {
   });
 
   it("provider disabilitato su summarize → 503, mai un crash", async () => {
-    const app = await buildServer(TEST_ENV, TEST_AI_ENV, { aiProvider: new DisabledAIProvider() });
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
+      aiProvider: new DisabledAIProvider(),
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/summarize",

@@ -1,9 +1,22 @@
-import { aiEnvSchema, apiEnvSchema, parseEnv } from "@businessbox/config";
+import { aiEnvSchema, apiEnvSchema, parseEnv, serverEnvSchema } from "@businessbox/config";
 import { buildServer } from "./server.js";
+import { createPgRepositories } from "./data/pg/index.js";
 
 const env = parseEnv(apiEnvSchema);
 const aiEnv = parseEnv(aiEnvSchema);
-const app = await buildServer(env, aiEnv);
+const serverEnv = parseEnv(serverEnvSchema);
+
+// Con DATABASE_URL usa Postgres; altrimenti datastore in-memory (dev/alpha).
+const repos = serverEnv.DATABASE_URL
+  ? await createPgRepositories(serverEnv.DATABASE_URL)
+  : undefined;
+if (!repos) {
+  console.warn(
+    "[api] DATABASE_URL non impostata: datastore IN-MEMORY (i dati non sopravvivono al riavvio).",
+  );
+}
+
+const app = await buildServer(env, aiEnv, serverEnv, repos ? { repos } : {});
 
 const shutdown = async (signal: string): Promise<void> => {
   app.log.info({ signal }, "arresto in corso");

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
-import type { AiEnv, ApiEnv } from "@businessbox/config";
+import swagger from "@fastify/swagger";
+import type { AiEnv, ApiEnv, ServerEnv } from "@businessbox/config";
 import {
   AiBudgetTracker,
   DisabledAIProvider,
@@ -9,17 +10,23 @@ import {
 } from "@businessbox/ai";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { createMemoryRepositories } from "./data/memory.js";
+import type { Repositories } from "./data/types.js";
+import { AuthService } from "./modules/auth/service.js";
+import { createAuthGuard } from "./modules/auth/guard.js";
+import { registerAuthRoutes } from "./modules/auth/routes.js";
+import { registerSyncRoutes } from "./modules/sync/routes.js";
+import { registerAdminRoutes } from "./modules/admin/routes.js";
 
 export interface BuildServerOptions {
-  /** Override per i test (MockAIProvider). */
   aiProvider?: AIProvider;
   aiBudget?: AiBudgetTracker;
+  /** Override delle repository (Postgres in produzione, memory nei test). */
+  repos?: Repositories;
 }
 
-/** Costruisce il provider AI dalle variabili server-side (prompt 05). */
 export function buildAiProvider(aiEnv: AiEnv): AIProvider {
   if (!aiEnv.OPENROUTER_API_KEY) {
-    // Nessuna chiave: il browser continua a funzionare senza AI.
     return new DisabledAIProvider();
   }
   return new OpenRouterGLMProvider({
@@ -42,17 +49,33 @@ export function buildAiProvider(aiEnv: AiEnv): AIProvider {
 export async function buildServer(
   env: ApiEnv,
   aiEnv: AiEnv,
+  serverEnv: ServerEnv,
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: {
-      level: env.NODE_ENV === "test" ? "silent" : env.LOG_LEVEL,
+    logger: { level: env.NODE_ENV === "test" ? "silent" : env.LOG_LEVEL },
+  });
+
+  const allowedOrigins = serverEnv.CORS_ALLOWED_ORIGINS.split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  await app.register(cors, { origin: allowedOrigins.length > 0 ? allowedOrigins : true });
+
+  await app.register(swagger, {
+    openapi: {
+      info: { title: "BusinessBox Browser API", version: "0.1.0" },
+      servers: [{ url: env.NODE_ENV === "production" ? "/" : `http://localhost:${env.API_PORT}` }],
     },
   });
 
-  // Alpha: il desktop chiama l'API da origin locali (dev server o file://).
-  // Restrizione per dominio in produzione: fasi 07-08 (CORS_ALLOWED_ORIGINS).
-  await app.register(cors, { origin: true });
+  const repos = options.repos ?? createMemoryRepositories();
+  const tokenConfig = {
+    accessSecret: serverEnv.JWT_ACCESS_SECRET,
+    accessTtlSeconds: serverEnv.JWT_ACCESS_TTL_SECONDS,
+    refreshTtlSeconds: serverEnv.JWT_REFRESH_TTL_SECONDS,
+  };
+  const authService = new AuthService({ repos, tokenConfig });
+  const requireAuth = createAuthGuard(repos, tokenConfig);
 
   registerHealthRoutes(app);
   registerAiRoutes(app, {
@@ -64,6 +87,9 @@ export async function buildServer(
         perRequestTokens: aiEnv.AI_REQUEST_TOKEN_LIMIT,
       }),
   });
+  registerAuthRoutes(app, { repos, authService, requireAuth });
+  registerSyncRoutes(app, { repos, requireAuth });
+  registerAdminRoutes(app, { repos, adminApiKey: serverEnv.ADMIN_API_KEY ?? null });
 
   return app;
 }

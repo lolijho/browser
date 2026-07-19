@@ -6,21 +6,26 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').mkdirSync('dist/data/pg',{recursive:true});require('node:fs').copyFileSync('src/data/pg/schema.sql','dist/data/pg/schema.sql')\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "@businessbox/ai": "workspace:*",
     "@businessbox/config": "workspace:*",
     "@businessbox/contracts": "workspace:*",
     "@businessbox/shared": "workspace:*",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/swagger": "^9.5.0",
+    "@node-rs/argon2": "^2.0.2",
     "fastify": "^5.10.0",
-    "zod": "^4.4.3",
-    "@businessbox/ai": "workspace:*",
-    "@fastify/cors": "^11.0.0"
+    "jose": "^6.0.0",
+    "pg": "^8.13.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

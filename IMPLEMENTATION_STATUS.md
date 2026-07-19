@@ -12,11 +12,77 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 03   | Gestore multi-motore di ricerca            | ✅ completata                       |
 | 04   | Persistenza locale, estrazione e memoria   | ✅ completata                       |
 | 05   | AI con GLM 5.2 tramite OpenRouter          | 🟡 nucleo completato (v. dettaglio) |
-| 06   | Backend, autenticazione e sincronizzazione | ⬜ da iniziare                      |
+| 06   | Backend, autenticazione e sincronizzazione | ✅ completata                       |
 | 07   | Hardening di sicurezza e privacy           | ⬜ da iniziare                      |
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare                      |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare                      |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+
+## Fase 06 — dettaglio (2026-07-19)
+
+### Architettura dati testabile
+
+Il layer dati è dietro l'interfaccia `Repositories` con **due implementazioni**:
+in-memory (test + dev/alpha senza Postgres) e **PostgreSQL** (`pg`). La stessa
+logica di auth, sync e tenancy gira identica su entrambe, quindi i criteri di
+accettazione sono testati end-to-end anche dove qui non c'è un Postgres attivo.
+
+### Fatto
+
+- **Schema PostgreSQL multi-tenant** (`apps/api/src/data/pg/schema.sql`): le 23+
+  tabelle del prompt (users, organizations, organization_members, devices,
+  refresh_tokens, workspaces, workspace_members, workboxes, page_cards,
+  page_snapshots, tags, page_tags, entities, page_entities, notes, tasks,
+  ai_conversations, ai_messages, ai_runs, ai_usage, sync_events, audit_logs,
+  plans, subscriptions) + pgvector per gli embedding; migrazione idempotente
+  con **advisory lock** (repliche concorrenti sicure).
+- **Autenticazione**: registrazione, login, logout, reset password, verifica
+  email predisposta; **Argon2id** per le password; access token JWT breve
+  (jose); **refresh token rotation** con conservazione solo dell'hash e
+  **rilevamento del riuso** (un token ruotato e riusato revoca l'intera catena
+  del dispositivo); revoca dispositivo; confronto a tempo costante per non
+  rivelare l'esistenza dell'account.
+- **Multi-tenancy**: il guard verifica **server-side l'appartenenza**
+  all'organizzazione a ogni richiesta; l'`org` proviene sempre dai claims
+  firmati, mai dal corpo — difesa centrale contro IDOR/abuso tenant (testato).
+- **API `/api/v1`** con moduli auth, users, devices, sync, admin, ai (fase 05),
+  health; **OpenAPI** generato (`@fastify/swagger`).
+- **Sincronizzazione local-first** (`SyncEngine`): UUID client-side,
+  **idempotency key** (retry non duplica), versioni per il rilevamento
+  conflitti, **tombstone** per le eliminazioni, **conflitti espliciti** per note
+  e spostamenti pagina concorrenti, **LWW documentato** solo per i campi
+  semplici (per `updatedAt`); pull incrementale con cursore. Mai sincronizzati
+  cookie/token/localStorage dei siti.
+- **Desktop**: `AuthTokenStore` con **access token solo in memoria**, **refresh
+  token cifrato via safeStorage** su disco (mai in chiaro, mai in localStorage),
+  logout con cancellazione sicura del file (testato con crypto iniettabile).
+- **Worker BullMQ**: code per classificazione, riassunti, embeddings, dedup,
+  cleanup, email, sync; handler **idempotenti** (`runIdempotent` salta i
+  contentHash già elaborati). Termina pulito senza `REDIS_URL`.
+- **Dashboard admin** (Next.js): pagine reali collegate all'API admin —
+  panoramica/salute, utenti, organizzazioni, consumo AI, code, feature flag,
+  versioni desktop, audit log; chiave admin **solo server-side**; gli admin
+  **non vedono il contenuto privato delle pagine** (le rotte non lo espongono).
+
+### Test eseguiti (fase 06)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 17/17 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **146 test** (api 35: auth register/login/refresh-rotation/
+  riuso-furto/revoca-device/reset, sync applied/duplicate/tombstone/LWW/
+  conflitti note+move/pull incrementale/**isolamento tenant** via HTTP, admin
+  con chiave + 503 + OpenAPI; worker 4: idempotenza per contentHash; desktop
+  30: incluso token-store safeStorage).
+
+### Rimandato / note
+
+- Verifica con **Postgres reale**: l'adapter `pg` compila e usa query
+  parametrizzate; l'esecuzione contro un Postgres vivo avviene con
+  `docker compose` nella fase 08 (qui non c'è un DB attivo).
+- Verifica email/reset via email transazionale reale: predisposta (job `email`),
+  invio effettivo con provider SMTP nella fase 08.
+- Statistiche live delle code worker in admin: richiedono Redis (fase 08).
+- Il client di sync nel desktop (mutation queue → push/pull con l'API) è
+  predisposto lato token/auth; il collegamento completo alla UI prosegue.
 
 ## Fase 05 — dettaglio (2026-07-19)
 
