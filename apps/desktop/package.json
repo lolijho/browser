@@ -17,15 +17,21 @@
   },
   "dependencies": {
     "@businessbox/contracts": "workspace:*",
+    "@businessbox/search": "workspace:*",
     "@businessbox/shared": "workspace:*",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "tailwindcss": "^4.1.0",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",

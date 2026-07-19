@@ -1,44 +1,26 @@
-import { useEffect, useState } from "react";
-import type { AppInfo } from "@businessbox/contracts";
+import { useEffect } from "react";
+import { connectShellStore, useShellStore } from "./store";
+import { TopBar } from "./components/TopBar";
+import { Sidebar } from "./components/Sidebar";
+import { ContentArea } from "./components/ContentArea";
+import { AIPanel } from "./components/AIPanel";
+import { StatusBar } from "./components/StatusBar";
 
 export function App() {
-  const [info, setInfo] = useState<AppInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const sidebarOpen = useShellStore((s) => s.sidebarOpen);
+  const aiPanelOpen = useShellStore((s) => s.aiPanelOpen);
 
-  useEffect(() => {
-    window.businessbox
-      .getAppInfo()
-      .then(setInfo)
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      });
-  }, []);
+  useEffect(() => connectShellStore(), []);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", lineHeight: 1.6 }}>
-      <h1>{info?.productName ?? "BusinessBox Browser"}</h1>
-      <p>
-        Fase 00 completata: shell Electron sicura con React avviata. La vera shell browser (barra
-        superiore, sidebar, <code>WebContentsView</code>) arriva con la fase 01.
-      </p>
-      {error ? (
-        <p role="alert">Errore nel bridge IPC: {error}</p>
-      ) : info ? (
-        <dl>
-          <dt>Versione app</dt>
-          <dd>
-            {info.appVersion} ({info.releaseChannel})
-          </dd>
-          <dt>Electron</dt>
-          <dd>{info.electronVersion}</dd>
-          <dt>Chromium</dt>
-          <dd>{info.chromeVersion}</dd>
-          <dt>Node</dt>
-          <dd>{info.nodeVersion}</dd>
-        </dl>
-      ) : (
-        <p>Caricamento informazioni…</p>
-      )}
-    </main>
+    <div className="flex h-full flex-col bg-zinc-100">
+      <TopBar />
+      <div className="flex min-h-0 flex-1">
+        {sidebarOpen && <Sidebar />}
+        <ContentArea />
+        {aiPanelOpen && <AIPanel />}
+      </div>
+      <StatusBar />
+    </div>
   );
 }

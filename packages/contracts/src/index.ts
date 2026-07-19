@@ -11,4 +11,33 @@ export {
   type ReadinessResponse,
 } from "./health.js";
 export { appInfoSchema, releaseChannelSchema, type AppInfo } from "./app-info.js";
-export { IPC_CHANNELS, IPC_CHANNEL_ALLOWLIST, type IpcChannel } from "./ipc.js";
+export {
+  IPC_CHANNELS,
+  IPC_EVENTS,
+  IPC_CHANNEL_ALLOWLIST,
+  IPC_EVENT_ALLOWLIST,
+  type IpcChannel,
+  type IpcEvent,
+} from "./ipc.js";
+export {
+  pageLoadErrorSchema,
+  pageStateSchema,
+  browserStateSchema,
+  createPageRequestSchema,
+  pageIdRequestSchema,
+  navigateRequestSchema,
+  setPinnedRequestSchema,
+  setPinnedResponseSchema,
+  contentBoundsSchema,
+  uiCommandSchema,
+  type PageLoadError,
+  type PageState,
+  type BrowserState,
+  type CreatePageRequest,
+  type PageIdRequest,
+  type NavigateRequest,
+  type SetPinnedRequest,
+  type SetPinnedResponse,
+  type ContentBounds,
+  type UiCommand,
+} from "./browser.js";

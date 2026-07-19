@@ -1,27 +1,31 @@
 import { join } from "node:path";
-import { BrowserWindow, app, ipcMain, session, shell } from "electron";
-import { IPC_CHANNELS } from "@businessbox/contracts";
+import { BrowserWindow, Menu, app, ipcMain, session, type Session } from "electron";
+import { IPC_CHANNELS, IPC_EVENTS, type UiCommand } from "@businessbox/contracts";
 import { BRANDING } from "@businessbox/shared";
+import { StaticSearchEngineManager } from "@businessbox/search";
 import { buildAppInfo } from "./app-info";
+import { BrowserController } from "./browser/browser-controller";
+import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
+import { registerBrowserIpc } from "./ipc";
+import { buildApplicationMenu } from "./menu";
 
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
 
-/** Solo URL https validi dopo normalizzazione WHATWG possono uscire verso il sistema. */
-function isSafeExternalUrl(rawUrl: string): boolean {
-  try {
-    return new URL(rawUrl).protocol === "https:";
-  } catch {
-    return false;
-  }
+/** Crea la sessione di un workspace con permessi deny-by-default. */
+function createWorkspaceSession(partition: string): Session {
+  const workspaceSession = session.fromPartition(partition);
+  workspaceSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  workspaceSession.setPermissionCheckHandler(() => false);
+  return workspaceSession;
 }
 
-function createWindow(): void {
+function createMainWindow(): void {
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1360,
+    height: 860,
+    minWidth: 960,
+    minHeight: 620,
     title: BRANDING.productName,
     show: false,
     webPreferences: {
@@ -32,16 +36,61 @@ function createWindow(): void {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
+  const shell = window.webContents;
 
-  // Nessuna finestra arbitraria: i link esterni HTTPS vanno al browser di sistema.
-  // Il protocollo va verificato sull'URL normalizzato (new URL), non sulla stringa
-  // grezza. Dalla fase 01 i popup diventeranno PageCard gestite dal browser controller.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeExternalUrl(url)) {
-      void shell.openExternal(url);
+  // La shell stessa non deve mai aprire finestre né navigare altrove.
+  shell.setWindowOpenHandler(() => ({ action: "deny" }));
+  shell.on("will-navigate", (event) => event.preventDefault());
+
+  const sessions = new WorkspaceSessionManager<Session>(createWorkspaceSession);
+  const searchManager = new StaticSearchEngineManager();
+
+  const controller = new BrowserController({
+    window,
+    sessions,
+    searchManager,
+    onStateChange: (snapshot) => {
+      if (!shell.isDestroyed()) {
+        shell.send(IPC_EVENTS.browserState, snapshot);
+      }
+    },
+  });
+
+  registerBrowserIpc(controller, shell);
+
+  const sendUiCommand = (command: UiCommand["command"]): void => {
+    if (!shell.isDestroyed()) {
+      shell.send(IPC_EVENTS.uiCommand, { command } satisfies UiCommand);
     }
-    return { action: "deny" };
+  };
+
+  const withActivePage = (action: (pageId: string) => void): void => {
+    const activeId = controller.getActivePageId();
+    if (activeId) {
+      action(activeId);
+    }
+  };
+
+  Menu.setApplicationMenu(
+    buildApplicationMenu({
+      newPage: () => controller.createPage(),
+      reloadActive: () => withActivePage((id) => controller.reload(id)),
+      goBack: () => withActivePage((id) => controller.goBack(id)),
+      goForward: () => withActivePage((id) => controller.goForward(id)),
+      focusOmnibox: () => {
+        shell.focus();
+        sendUiCommand("focus-omnibox");
+      },
+      toggleSidebar: () => sendUiCommand("toggle-sidebar"),
+      toggleAiPanel: () => sendUiCommand("toggle-ai-panel"),
+      openActivePageDevTools: () => withActivePage((id) => controller.openDevTools(id)),
+    }),
+  );
+
+  window.once("ready-to-show", () => {
+    window.show();
+    // La shell parte con una newtab interna già attiva.
+    controller.createPage();
   });
 
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
@@ -53,8 +102,8 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
-  // Permessi deny-by-default: la gestione granulare per dominio/workspace arriva nella fase 07.
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+  // Deny-by-default anche per la sessione della shell.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(false);
   });
 
@@ -67,11 +116,11 @@ void app.whenReady().then(() => {
     }),
   );
 
-  createWindow();
+  createMainWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createMainWindow();
     }
   });
 });

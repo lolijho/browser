@@ -7,7 +7,7 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | Fase | Argomento                                  | Stato          |
 | ---- | ------------------------------------------ | -------------- |
 | 00   | Bootstrap, architettura e monorepo         | ✅ completata  |
-| 01   | Shell browser Electron (`WebContentsView`) | ⬜ da iniziare |
+| 01   | Shell browser Electron (`WebContentsView`) | ✅ completata  |
 | 02   | Smart Tabs, sidebar e WorkBox              | ⬜ da iniziare |
 | 03   | Gestore multi-motore di ricerca            | ⬜ da iniziare |
 | 04   | Persistenza locale, estrazione e memoria   | ⬜ da iniziare |
@@ -17,6 +17,58 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare |
+
+## Fase 01 — dettaglio (2026-07-19)
+
+### Fatto
+
+- **BrowserController** nel main process (`apps/desktop/src/main/browser/`):
+  creazione/distruzione `WebContentsView`, loadURL, back/forward/reload/stop
+  (API `navigationHistory`), eventi titolo/URL/favicon/loading/target-url,
+  crash del renderer segnalato e ripristinabile, errori di navigazione con
+  pagina interna di errore, popup intercettati con `setWindowOpenHandler` e
+  trasformati in nuove pagine dello stesso workspace (mai finestre arbitrarie).
+- **Bounds**: il renderer misura l'area contenuto (ResizeObserver) e la
+  comunica via IPC; il main posiziona la view attiva e la segue a ogni resize
+  e apertura/chiusura dei pannelli. Solo la view attiva è attaccata alla
+  finestra.
+- **WorkspaceSessionManager** con `persist:workspace-<id>`, factory iniettabile,
+  permessi deny-by-default per sessione; test che dimostra partizioni distinte
+  per due workspace. Fase 01 usa il workspace `default`.
+- **Navigazione iniziale**: newtab interna `businessbox://newtab` resa dalla
+  shell React (zero contenuto remoto); omnibox con classificatore URL/ricerca
+  (`@businessbox/search`, testato); ricerca instradata dietro
+  `SearchEngineManager` (registry dei 7 motori centralizzato, default Google,
+  implementazione completa in fase 03).
+- **Layout**: barra superiore (indietro/avanti/ricarica-stop, omnibox, titolo
+  pagina attiva, area 3 pinned con limite applicato dal main, pulsanti sidebar
+  e AI, menu impostazioni Radix), sidebar sinistra richiudibile con sezioni
+  Pinned/Aperte e azioni (attiva, pin/unpin, chiudi), pannello AI destro
+  richiudibile (placeholder funzionale), status bar (stato caricamento, URL,
+  target-url hover, contatore pagine).
+- **Scorciatoie** via menu applicativo: Ctrl/Cmd+L, Ctrl/Cmd+T, Ctrl/Cmd+R,
+  Ctrl/Cmd+B, Ctrl/Cmd+Shift+A, Alt+Left/Right.
+- **Sicurezza**: sandbox globale, contextIsolation, nessun preload nelle pagine
+  remote, IPC nominati con Zod e verifica del mittente (solo la shell),
+  navigazione limitata a http/https, `will-attach-webview` bloccato, nessun
+  bypass TLS, shell con window-open e will-navigate negati.
+- **UI stack**: Zustand (store shell), Tailwind 4, Radix UI dropdown.
+
+### Test eseguiti (fase 01)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 15/15 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ 48 test (search 19: classificatore omnibox, registry motori,
+  template; desktop 8: sessioni workspace, regola max 3 pinned, app-info).
+
+### Problemi aperti / note
+
+- Verifica interattiva (apertura siti reali, resize, crash/restore) eseguibile
+  solo dove il binario Electron è disponibile: `pnpm dev:desktop` in locale o
+  artifact CI macOS. In questo ambiente remoto la egress policy lo impedisce.
+- Il flusso "quarta pinned → scegli quale sostituire" è deliberatamente
+  rimandato alla fase 02 (ora: rifiuto con messaggio in sidebar).
+- `update-target-url` emette lo snapshot completo: se diventasse rumoroso,
+  introdurre un canale evento dedicato leggero.
 
 ## Fase 00 — dettaglio
 
