@@ -12,7 +12,9 @@ import {
   createWorkBoxRequestSchema,
   createWorkspaceRequestSchema,
   deletePageRequestSchema,
+  extractedContentSchema,
   importSearchSettingsRequestSchema,
+  localSearchRequestSchema,
   movePageRequestSchema,
   navigateRequestSchema,
   openSearchDecisionRequestSchema,
@@ -21,6 +23,7 @@ import {
   pageIdRequestSchema,
   pageScrollEventSchema,
   removeEngineRequestSchema,
+  setAllowScreenshotRequestSchema,
   setKeepAliveRequestSchema,
   setPinnedRequestSchema,
   setSearchDefaultRequestSchema,
@@ -30,6 +33,7 @@ import {
 } from "@businessbox/contracts";
 import type { ConfigurableSearchEngineManager } from "@businessbox/search";
 import type { BrowserController } from "./browser/browser-controller";
+import type { PersistenceService } from "./persistence";
 
 /**
  * Registra i canali IPC del browser. Ogni payload è validato con Zod e ogni
@@ -39,6 +43,7 @@ import type { BrowserController } from "./browser/browser-controller";
 export function registerBrowserIpc(
   controller: BrowserController,
   searchManager: ConfigurableSearchEngineManager,
+  persistence: PersistenceService,
   shell: WebContents,
 ): void {
   function handle<TSchema extends z.ZodType>(
@@ -160,6 +165,17 @@ export function registerBrowserIpc(
   handle(IPC_CHANNELS.searchOpenSearchDecision, openSearchDecisionRequestSchema, (payload) =>
     controller.decideOpenSearch(payload.proposalId, payload.accept),
   );
+  handle(IPC_CHANNELS.searchLocal, localSearchRequestSchema, (request) => ({
+    results: persistence.searchLocal(request),
+  }));
+  handle(
+    IPC_CHANNELS.browserSetAllowScreenshot,
+    setAllowScreenshotRequestSchema,
+    ({ pageId, allow }) => controller.setAllowScreenshot(pageId, allow),
+  );
+  handle(IPC_CHANNELS.browserDeleteScreenshot, pageIdRequestSchema, ({ pageId }) =>
+    controller.deleteScreenshot(pageId),
+  );
   handle(IPC_CHANNELS.layoutSetContentBounds, contentBoundsSchema, (bounds) =>
     controller.setContentBounds(bounds),
   );
@@ -182,6 +198,12 @@ export function registerBrowserIpc(
     const parsed = openSearchDetectedEventSchema.safeParse(rawPayload);
     if (parsed.success) {
       controller.handleOpenSearchDetected(event.sender.id, parsed.data.href, parsed.data.title);
+    }
+  });
+  ipcMain.on(PAGE_IPC_CHANNELS.snapshotExtracted, (event, rawPayload: unknown) => {
+    const parsed = extractedContentSchema.safeParse(rawPayload);
+    if (parsed.success) {
+      controller.handleSnapshotExtracted(event.sender.id, parsed.data);
     }
   });
 }

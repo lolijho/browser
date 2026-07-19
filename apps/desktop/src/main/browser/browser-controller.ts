@@ -7,7 +7,11 @@ import type {
   PageCard,
   SetPinnedResponse,
 } from "@businessbox/contracts";
-import { PAGE_IPC_CHANNELS, type OpenSearchProposal } from "@businessbox/contracts";
+import {
+  PAGE_IPC_CHANNELS,
+  type ExtractedContent,
+  type OpenSearchProposal,
+} from "@businessbox/contracts";
 import { INTERNAL_NEWTAB_URL } from "@businessbox/shared";
 import {
   parseOpenSearchDescriptor,
@@ -56,6 +60,16 @@ export interface BrowserControllerOptions {
   onOpenSearchProposal: (proposal: OpenSearchProposal) => void;
   /** Fetch del descriptor OpenSearch, iniettabile nei test. */
   fetchText?: (url: string) => Promise<string>;
+  /** Hook di persistenza (fase 04): assenti nei test del controller. */
+  onNavigationCommitted?: (pageId: string, url: string, title: string) => void;
+  onSnapshotExtracted?: (
+    pageId: string,
+    extracted: ExtractedContent,
+    meta: { faviconUrl: string | null; scrollPosition: number | null },
+  ) => void;
+  screenshotsEnabled?: () => boolean;
+  onScreenshotCaptured?: (pageId: string, png: Uint8Array) => void;
+  onScreenshotDeleted?: (pageId: string) => void;
 }
 
 /**
@@ -268,6 +282,60 @@ export class BrowserController {
 
   private readonly openSearchProposals = new Map<string, OpenSearchProposal>();
   private readonly openSearchSeen = new Set<string>();
+  private readonly extractTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly screenshotTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private scheduleExtractRequest(pageId: string, wc: WebContents): void {
+    const existing = this.extractTimers.get(pageId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    this.extractTimers.set(
+      pageId,
+      setTimeout(() => {
+        this.extractTimers.delete(pageId);
+        if (!wc.isDestroyed()) {
+          wc.send(PAGE_IPC_CHANNELS.requestExtract);
+        }
+      }, 2000),
+    );
+  }
+
+  private scheduleScreenshot(pageId: string, wc: WebContents): void {
+    const card = this.store.getCard(pageId);
+    if (
+      !card ||
+      !card.allowScreenshot ||
+      (this.options.screenshotsEnabled && !this.options.screenshotsEnabled()) ||
+      !this.options.onScreenshotCaptured
+    ) {
+      return;
+    }
+    const existing = this.screenshotTimers.get(pageId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    this.screenshotTimers.set(
+      pageId,
+      setTimeout(() => {
+        this.screenshotTimers.delete(pageId);
+        // Solo la pagina attiva e visibile: capturePage su view nascoste è inaffidabile.
+        if (wc.isDestroyed() || this.store.getActivePageId() !== pageId) {
+          return;
+        }
+        void wc
+          .capturePage()
+          .then((image) => {
+            if (!image.isEmpty()) {
+              this.options.onScreenshotCaptured?.(pageId, image.toPNG());
+            }
+          })
+          .catch(() => {
+            // Screenshot best-effort: mai bloccare la navigazione.
+          });
+      }, 1500),
+    );
+  }
 
   /**
    * OpenSearch (prompt 03): il rilevamento produce SOLO una proposta.
@@ -317,6 +385,53 @@ export class BrowserController {
       .catch(() => {
         // Descriptor irraggiungibile o non valido: nessuna proposta.
       });
+  }
+
+  /** Contenuto estratto dal preload: instradato alla persistenza (fase 04). */
+  handleSnapshotExtracted(webContentsId: number, extracted: ExtractedContent): void {
+    const pageId = this.wcIdToPageId.get(webContentsId);
+    const card = pageId ? this.store.getCard(pageId) : undefined;
+    if (!pageId || !card) {
+      return;
+    }
+    this.options.onSnapshotExtracted?.(pageId, extracted, {
+      faviconUrl: card.faviconUrl,
+      scrollPosition: card.scrollPosition,
+    });
+  }
+
+  setAllowScreenshot(pageId: string, allow: boolean): void {
+    this.store.setAllowScreenshot(pageId, allow);
+    if (!allow) {
+      this.options.onScreenshotDeleted?.(pageId);
+    }
+    this.update();
+  }
+
+  deleteScreenshot(pageId: string): void {
+    this.options.onScreenshotDeleted?.(pageId);
+  }
+
+  /**
+   * Ripristino al riavvio: riattiva l'ultima pagina del workspace attivo
+   * (ricreandola nella stessa partizione) e ricrea le pinned entro il limite;
+   * tutte le altre restano cold.
+   */
+  restoreSession(): void {
+    const activeId = this.store.getActivePageId();
+    if (activeId) {
+      this.activatePage(activeId);
+    } else {
+      this.ensureActivePage();
+    }
+    const pinned = this.store
+      .pagesOf(this.store.getActiveWorkspaceId())
+      .filter((p) => p.pinned && !p.archived)
+      .slice(0, this.lifecycleConfig.maxHot - 1);
+    for (const page of pinned) {
+      this.restoreIfCold(page.id);
+    }
+    this.update();
   }
 
   decideOpenSearch(proposalId: string, accept: boolean): void {
@@ -432,6 +547,7 @@ export class BrowserController {
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
       });
+      this.scheduleScreenshot(pageId, wc);
       this.update();
     });
 
@@ -461,6 +577,7 @@ export class BrowserController {
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
       });
+      this.options.onNavigationCommitted?.(pageId, url, wc.getTitle());
       this.update();
     });
 
@@ -471,6 +588,9 @@ export class BrowserController {
           canGoBack: wc.navigationHistory.canGoBack(),
           canGoForward: wc.navigationHistory.canGoForward(),
         });
+        this.options.onNavigationCommitted?.(pageId, url, wc.getTitle());
+        // SPA: chiedi una nuova estrazione con debounce (mai bloccante).
+        this.scheduleExtractRequest(pageId, wc);
         this.update();
       }
     });

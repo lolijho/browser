@@ -7,6 +7,8 @@ import type {
   DeletePageResponse,
   EngineMutationResponse,
   ExportSearchSettingsResponse,
+  LocalSearchRequest,
+  LocalSearchResponse,
   PageCard,
   SetPinnedResponse,
 } from "@businessbox/contracts";
@@ -50,6 +52,9 @@ declare global {
       exportSearchSettings(): Promise<ExportSearchSettingsResponse>;
       importSearchSettings(json: string): Promise<EngineMutationResponse>;
       decideOpenSearch(proposalId: string, accept: boolean): Promise<void>;
+      searchLocal(request: LocalSearchRequest): Promise<LocalSearchResponse>;
+      setAllowScreenshot(pageId: string, allow: boolean): Promise<void>;
+      deleteScreenshot(pageId: string): Promise<void>;
       onOpenSearchProposal(callback: (payload: unknown) => void): () => void;
       openDevTools(pageId: string): Promise<void>;
       setContentBounds(bounds: ContentBounds): Promise<void>;

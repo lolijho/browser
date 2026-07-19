@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { INTERNAL_NEWTAB_URL } from "@businessbox/shared";
-import type { PageCard, WorkBox } from "@businessbox/contracts";
+import type { LocalSearchResult, PageCard, WorkBox } from "@businessbox/contracts";
 import { useShellStore } from "../store";
 import { copyPageUrl, requestDeletePage, requestPinToggle } from "../actions";
 import { NameDialog } from "./dialogs/NameDialog";
@@ -145,6 +145,20 @@ function PageRow({
           <ContextMenu.Item className={menuItemClass} onSelect={() => void copyPageUrl(page.url)}>
             Copia URL
           </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() =>
+              void window.businessbox.setAllowScreenshot(page.id, !page.allowScreenshot)
+            }
+          >
+            {page.allowScreenshot ? "Disattiva screenshot" : "Consenti screenshot"}
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => void window.businessbox.deleteScreenshot(page.id)}
+          >
+            Elimina screenshot salvato
+          </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-zinc-200" />
           <ContextMenu.Item
             className={`${menuItemClass} text-red-600`}
@@ -187,6 +201,58 @@ function SectionRow({ row }: { row: Extract<Row, { kind: "section" }> }) {
     >
       {row.label} · {row.count}
       {acceptsDrop && dragOver && <span className="ml-2 normal-case">rilascia qui</span>}
+    </div>
+  );
+}
+
+/**
+ * Ricerca nell'archivio (FTS su contenuto estratto, fase 04): integra la
+ * ricerca rapida sulle pagine aperte con i risultati dal database locale.
+ */
+function ArchiveSearchResults() {
+  const query = useShellStore((s) => s.searchQuery);
+  const activeWorkspaceId = useShellStore((s) => s.browser.activeWorkspaceId);
+  const [results, setResults] = useState<LocalSearchResult[]>([]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void window.businessbox
+        .searchLocal({ query: trimmed, workspaceId: activeWorkspaceId })
+        .then((response) => setResults(response.results))
+        .catch(() => setResults([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, activeWorkspaceId]);
+
+  if (results.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="max-h-56 shrink-0 overflow-y-auto border-t border-zinc-200 px-2 py-1">
+      <p className="px-2 py-1 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
+        Archivio · {results.length}
+      </p>
+      {results.map((result) => (
+        <button
+          key={result.pageId}
+          type="button"
+          className="block w-full rounded-lg px-2 py-1 text-left hover:bg-zinc-100"
+          title={result.url}
+          onClick={() => void window.businessbox.activatePage(result.pageId)}
+        >
+          <span className="block truncate text-[13px] text-zinc-800">
+            {result.title || result.url}
+            {result.archived && <span className="ml-1 text-[10px] text-zinc-400">archiviata</span>}
+          </span>
+          <span className="block truncate text-[11px] text-zinc-400">{result.snippet}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -372,6 +438,8 @@ export function Sidebar() {
           })}
         </div>
       </div>
+
+      <ArchiveSearchResults />
 
       {notice && (
         <div className="m-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 ring-1 ring-amber-200">

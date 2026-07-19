@@ -5,9 +5,11 @@ import { BRANDING } from "@businessbox/shared";
 import { ConfigurableSearchEngineManager } from "@businessbox/search";
 import { buildAppInfo } from "./app-info";
 import { BrowserController } from "./browser/browser-controller";
+import { TabStore } from "./browser/tab-store";
 import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
 import { registerBrowserIpc } from "./ipc";
 import { buildApplicationMenu } from "./menu";
+import { PersistenceService } from "./persistence";
 
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
@@ -45,23 +47,55 @@ function createMainWindow(): void {
   const sessions = new WorkspaceSessionManager<Session>(createWorkspaceSession);
   const searchManager = new ConfigurableSearchEngineManager();
 
+  // --- persistenza locale (fase 04): carica prima di creare il controller ---
+  const persistence = new PersistenceService(app.getPath("userData"));
+  if (persistence.recoveredFromCorruption) {
+    console.warn(
+      "[db] database locale corrotto: messo in quarantena (.corrupt-*) e ricreato vuoto.",
+    );
+  }
+  const store = new TabStore();
+  const loaded = persistence.load();
+  store.hydrate({
+    workspaces: loaded.workspaces,
+    workBoxes: loaded.workBoxes,
+    cards: loaded.cards,
+    session: loaded.session,
+  });
+  if (loaded.searchSettingsJson) {
+    searchManager.importSettings(loaded.searchSettingsJson);
+  }
+
   const controller = new BrowserController({
     window,
     sessions,
     searchManager,
+    store,
     onStateChange: (snapshot) => {
       if (!shell.isDestroyed()) {
         shell.send(IPC_EVENTS.browserState, snapshot);
       }
+      persistence.scheduleSave(snapshot, store.getSessionState());
     },
     onOpenSearchProposal: (proposal) => {
       if (!shell.isDestroyed()) {
         shell.send(IPC_EVENTS.openSearchProposal, proposal);
       }
     },
+    onNavigationCommitted: (pageId, url, title) => persistence.recordNavigation(pageId, url, title),
+    onSnapshotExtracted: (pageId, extracted, meta) =>
+      persistence.storeExtracted(pageId, extracted, meta),
+    screenshotsEnabled: () => persistence.screenshotsEnabled(),
+    onScreenshotCaptured: (pageId, png) => persistence.saveScreenshot(pageId, png),
+    onScreenshotDeleted: (pageId) => persistence.deleteScreenshot(pageId),
   });
 
-  registerBrowserIpc(controller, searchManager, shell);
+  registerBrowserIpc(controller, searchManager, persistence, shell);
+
+  app.on("will-quit", () => {
+    controller.dispose();
+    persistence.close();
+  });
 
   const sendUiCommand = (command: UiCommand["command"]): void => {
     if (!shell.isDestroyed()) {
@@ -97,8 +131,8 @@ function createMainWindow(): void {
 
   window.once("ready-to-show", () => {
     window.show();
-    // La shell parte con una newtab interna già attiva.
-    controller.createPage();
+    // Ripristina la sessione precedente (o crea una newtab al primo avvio).
+    controller.restoreSession();
   });
 
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];

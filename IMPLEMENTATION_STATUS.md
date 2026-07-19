@@ -10,13 +10,67 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 01   | Shell browser Electron (`WebContentsView`) | ✅ completata  |
 | 02   | Smart Tabs, sidebar e WorkBox              | ✅ completata  |
 | 03   | Gestore multi-motore di ricerca            | ✅ completata  |
-| 04   | Persistenza locale, estrazione e memoria   | ⬜ da iniziare |
+| 04   | Persistenza locale, estrazione e memoria   | ✅ completata  |
 | 05   | AI con GLM 5.2 tramite OpenRouter          | ⬜ da iniziare |
 | 06   | Backend, autenticazione e sincronizzazione | ⬜ da iniziare |
 | 07   | Hardening di sicurezza e privacy           | ⬜ da iniziare |
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare |
+
+## Fase 04 — dettaglio (2026-07-19)
+
+### Fatto
+
+- **`@businessbox/database`**: driver SQLite astratto con implementazione su
+  `node:sqlite` (valutazione better-sqlite3 documentata in docs/DATABASE.md),
+  migrazioni versionate (v1: 20 tabelle richieste + FTS5; v2: indici),
+  `LocalDatabase` con integrity check, quarantena file corrotto e backup
+  `VACUUM INTO`, `Repositories` tipizzati (modello browser, snapshot,
+  cronologia, impostazioni KV, ricerca FTS con filtri).
+- **Persistenza**: `PersistenceService` nel main — carica all'avvio (hydrate del
+  TabStore + import impostazioni motori), salva con debounce 800ms a ogni
+  mutazione, flush su `will-quit`. Stato di sessione persistito (workspace
+  attivo + ultima pagina attiva per workspace).
+- **Ripristino al riavvio**: ultimo workspace, pagina attiva ricreata, pinned
+  ricreate entro il limite hot, tutte le altre cold, WorkBox e ordinamento
+  preservati, stessa `session_partition` (assert nel controller).
+- **Estrazione** nel preload isolato con **Mozilla Readability** (bundled):
+  testo leggibile, headings, meta description, lingua, canonical, Open Graph,
+  JSON-LD validato (mai eseguito), autore/data, link principali (dedup, max
+  25), testo tabelle; sanitizzazione (control char) e limiti severi su ogni
+  campo (Zod nel main); mai bloccante; SPA gestite con richiesta di
+  ri-estrazione debounced su `did-navigate-in-page`.
+- **Content hash**: sha256 di titolo+testo+tabelle — se invariato lo snapshot
+  non viene riscritto (niente re-processing); `normalized_url_hash` con host
+  normalizzato e parametri di tracking rimossi.
+- **Screenshot**: `capturePage` best-effort della sola pagina attiva (PNG in
+  `userData/screenshots/`), rispetta `allowScreenshot` per pagina (toggle nel
+  menu contestuale) e il flag globale `screenshots.enabled`; comando "Elimina
+  screenshot salvato"; nessuna sincronizzazione.
+- **Ricerca locale**: sezione "Archivio" nella sidebar (debounce 250ms) con
+  snippet FTS evidenziati; filtri API: workspace, WorkBox, dominio, pinned,
+  archiviate, limite.
+- **Cronologia**: `page_navigation_history` alimentata da `did-navigate` e
+  `did-navigate-in-page`.
+
+### Test eseguiti (fase 04)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 16/16 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **94 test** (database 14: migrazioni da zero/da versione
+  precedente/idempotenti, quarantena corrotto, backup+restore, roundtrip
+  modello, prune pagine eliminate, content hash dedupe, FTS su testo e
+  tabelle, filtri, cronologia, query FTS ostili, normalizzazione URL).
+
+### Problemi aperti / note
+
+- Il riavvio reale dell'app (restore end-to-end con finestra) va verificato con
+  il binario Electron (artifact CI / `pnpm dev:desktop`): la logica è coperta
+  dai test di hydrate/restore ma non da un test Playwright Electron (fase 09).
+- `node:sqlite` emette un ExperimentalWarning su Node 22: innocuo; sparisce con
+  i runtime Node 24+ (Electron recente).
+- Tabelle `tags/entities/notes/tasks/ai_*/classification_rules/sync_*` create e
+  migrate: la logica applicativa arriva nelle fasi 05-06.
 
 ## Fase 03 — dettaglio (2026-07-19)
 

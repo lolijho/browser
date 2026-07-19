@@ -10,6 +10,8 @@ import {
   type DeletePageResponse,
   type EngineMutationResponse,
   type ExportSearchSettingsResponse,
+  type LocalSearchRequest,
+  type LocalSearchResponse,
   type PageCard,
   type SetPinnedResponse,
 } from "@businessbox/contracts";
@@ -139,6 +141,18 @@ const bridge = {
       proposalId,
       accept,
     }) as Promise<void>,
+
+  searchLocal: (request: LocalSearchRequest): Promise<LocalSearchResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchLocal, request) as Promise<LocalSearchResponse>,
+
+  setAllowScreenshot: (pageId: string, allow: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserSetAllowScreenshot, {
+      pageId,
+      allow,
+    }) as Promise<void>,
+
+  deleteScreenshot: (pageId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserDeleteScreenshot, { pageId }) as Promise<void>,
 
   onOpenSearchProposal: (callback: (payload: unknown) => void): (() => void) =>
     subscribe(IPC_EVENTS.openSearchProposal, callback),

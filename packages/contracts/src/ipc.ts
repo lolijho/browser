@@ -33,6 +33,9 @@ export const IPC_CHANNELS = {
   searchExport: "search:export",
   searchImport: "search:import",
   searchOpenSearchDecision: "search:opensearch-decision",
+  searchLocal: "search:local",
+  browserSetAllowScreenshot: "browser:set-allow-screenshot",
+  browserDeleteScreenshot: "browser:delete-screenshot",
   layoutSetContentBounds: "layout:set-content-bounds",
 } as const;
 
@@ -54,6 +57,10 @@ export const PAGE_IPC_CHANNELS = {
   restoreScroll: "page:restore-scroll",
   /** page → main: trovato un link OpenSearch nella pagina. */
   openSearchDetected: "page:opensearch-detected",
+  /** page → main: contenuto estratto (Readability) pronto. */
+  snapshotExtracted: "page:snapshot-extracted",
+  /** main → page: richiedi una nuova estrazione (navigazione SPA). */
+  requestExtract: "page:request-extract",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

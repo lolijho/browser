@@ -20,6 +20,19 @@ export interface CreatePageInput {
   parentPageId?: string | null;
 }
 
+/** Stato di sessione per il ripristino al riavvio. */
+export interface TabSessionState {
+  activeWorkspaceId: string;
+  lastActiveByWorkspace: Record<string, string | null>;
+}
+
+export interface HydrateInput {
+  workspaces: Workspace[];
+  workBoxes: WorkBox[];
+  cards: PageCard[];
+  session: TabSessionState | null;
+}
+
 interface WorkspaceRecord extends Workspace {
   lastActivePageId: string | null;
 }
@@ -40,6 +53,60 @@ export class TabStore {
   constructor(private readonly now: () => string = () => new Date().toISOString()) {
     const created = this.createWorkspace("Principale", DEFAULT_WORKSPACE_ID);
     this.activeWorkspaceId = created.id;
+  }
+
+  /**
+   * Ripristino al riavvio (fase 04): ricarica workspace, WorkBox e PageCard
+   * dal database. Le card arrivano cold; il controller ricrea attiva e pinned.
+   */
+  hydrate(input: HydrateInput): void {
+    if (input.workspaces.length === 0) {
+      return;
+    }
+    this.workspaces.clear();
+    this.workBoxes.clear();
+    this.cards.clear();
+    this.cardOrder = [];
+
+    for (const workspace of input.workspaces) {
+      this.workspaces.set(workspace.id, { ...workspace, lastActivePageId: null });
+    }
+    for (const workBox of input.workBoxes) {
+      this.workBoxes.set(workBox.id, workBox);
+    }
+    for (const card of input.cards) {
+      this.cards.set(card.id, { ...card });
+      this.cardOrder.push(card.id);
+    }
+
+    const session = input.session;
+    if (session) {
+      for (const [workspaceId, pageId] of Object.entries(session.lastActiveByWorkspace)) {
+        const workspace = this.workspaces.get(workspaceId);
+        if (workspace && (pageId === null || this.cards.has(pageId))) {
+          workspace.lastActivePageId = pageId;
+        }
+      }
+      if (this.workspaces.has(session.activeWorkspaceId)) {
+        this.activeWorkspaceId = session.activeWorkspaceId;
+        return;
+      }
+    }
+    this.activeWorkspaceId = input.workspaces[0]!.id;
+  }
+
+  getSessionState(): TabSessionState {
+    const lastActiveByWorkspace: Record<string, string | null> = {};
+    for (const workspace of this.workspaces.values()) {
+      lastActiveByWorkspace[workspace.id] = workspace.lastActivePageId;
+    }
+    return { activeWorkspaceId: this.activeWorkspaceId, lastActiveByWorkspace };
+  }
+
+  setAllowScreenshot(pageId: string, allow: boolean): void {
+    const card = this.mustGet(pageId);
+    card.allowScreenshot = allow;
+    this.touch(card);
   }
 
   // --- workspace ---
@@ -108,6 +175,7 @@ export class TabStore {
       keepAlive: false,
       dirtyState: false,
       archived: false,
+      allowScreenshot: true,
       sessionPartition: workspaceSessionPartition(workspaceId),
       scrollPosition: null,
       faviconUrl: null,

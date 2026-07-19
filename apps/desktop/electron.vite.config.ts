@@ -9,6 +9,8 @@ const bundledWorkspacePackages = [
   "@businessbox/shared",
   "@businessbox/contracts",
   "@businessbox/search",
+  "@businessbox/database",
+  "@mozilla/readability",
 ];
 
 export default defineConfig({

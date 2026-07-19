@@ -12,6 +12,18 @@ export {
 } from "./health.js";
 export { appInfoSchema, releaseChannelSchema, type AppInfo } from "./app-info.js";
 export {
+  extractedContentSchema,
+  localSearchRequestSchema,
+  localSearchResultSchema,
+  localSearchResponseSchema,
+  setAllowScreenshotRequestSchema,
+  type ExtractedContent,
+  type LocalSearchRequest,
+  type LocalSearchResult,
+  type LocalSearchResponse,
+  type SetAllowScreenshotRequest,
+} from "./extraction.js";
+export {
   searchEngineSchema,
   searchSettingsSchema,
   setSearchDefaultRequestSchema,
