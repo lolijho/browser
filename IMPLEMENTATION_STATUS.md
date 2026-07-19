@@ -8,7 +8,7 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | ---- | ------------------------------------------ | -------------- |
 | 00   | Bootstrap, architettura e monorepo         | ✅ completata  |
 | 01   | Shell browser Electron (`WebContentsView`) | ✅ completata  |
-| 02   | Smart Tabs, sidebar e WorkBox              | ⬜ da iniziare |
+| 02   | Smart Tabs, sidebar e WorkBox              | ✅ completata  |
 | 03   | Gestore multi-motore di ricerca            | ⬜ da iniziare |
 | 04   | Persistenza locale, estrazione e memoria   | ⬜ da iniziare |
 | 05   | AI con GLM 5.2 tramite OpenRouter          | ⬜ da iniziare |
@@ -17,6 +17,60 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare |
+
+## Fase 02 — dettaglio (2026-07-19)
+
+### Fatto
+
+- **Modello dati** (`@businessbox/contracts`): `PageCard` completo del prompt 02
+  (workBoxId, parentPageId, domain, state hot/warm/cold, pinned, keepAlive,
+  dirtyState, archived, sessionPartition, scrollPosition, timestamp) +
+  `Workspace` e `WorkBox`.
+- **TabStore** (dominio puro, in-memory fino alla fase 04): regole 1-7 del
+  lifecycle — nuova pagina attiva, top bar = attiva + pinned, max 3 pinned con
+  flusso "scegli quale sostituire", chiusura dalla barra = archiviazione,
+  eliminazione definitiva esplicita con conferma se dirty; workspace multipli
+  con attiva per workspace; WorkBox con validazione workspace; duplica, sposta,
+  keep alive, dirty ⇒ keepAlive temporaneo.
+- **Motore lifecycle puro** (`computeDesiredLifecycle`): hot = attiva+pinned del
+  workspace attivo (max 4), warm = renderer vivi recenti (max 6, timeout 5 min
+  configurabile), cold = renderer distrutto; dirty/keepAlive mai declassate
+  automaticamente; archiviate sempre cold. Tick periodico (30 s) nel controller.
+- **BrowserController riconciliatore**: distrugge i renderer che diventano cold,
+  ricrea le pagine cold alla riattivazione **nella stessa session partition**
+  (assert di coerenza), ripristina la posizione di scroll dopo il restore.
+- **Dirty state**: preload isolato nelle pagine remote che osserva input,
+  textarea, contenteditable e submit **senza mai leggere i valori dei campi**;
+  esclusi password, hidden, autocomplete cc-*/one-time-code e nomi sensibili
+  (card/cvv/iban/token/otp/pin…). Badge nella UI, conferma prima della chiusura
+  definitiva. Scroll tracciato (solo coordinata Y, throttling 500 ms).
+- **Sidebar completa**: switcher workspace (creazione inclusa), elenco WorkBox,
+  ricerca rapida, lista **virtualizzata** (@tanstack/react-virtual), drag&drop
+  delle pagine su WorkBox/Da organizzare (aggiorna realmente il modello), menu
+  contestuale (apri, pin/unpin, keep alive, sposta in…, archivia/ripristina,
+  duplica, copia URL, elimina definitivamente), contatori per sezione, sezioni
+  Pinned/Recenti/WorkBox/Da organizzare/Archiviate, indicatore stato
+  hot/warm/cold per pagina.
+- **Dialoghi**: sostituzione quarta pinned; conferma eliminazione pagina dirty;
+  creazione workspace/WorkBox. Status bar con contatori hot/warm/cold e nome
+  workspace. Copia URL via clipboard nel main (IPC dedicato).
+
+### Test eseguiti (fase 02)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 15/15 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **66 test** (desktop 26: TabStore con regole 1-7, limite
+  pinned con sostituzione, archivia/elimina, dirty→conferma, 10 pagine
+  recuperabili, partizioni per workspace, drag&drop, duplica, attiva per
+  workspace; lifecycle-rules 7 casi; pin-rules; sessioni; app-info).
+
+### Problemi aperti / note
+
+- Il timeout warm→cold e i limiti hot/warm sono costanti condivise
+  (`@businessbox/shared`), configurabili dal controller; la configurabilità
+  utente arriva con le impostazioni (fase 04+).
+- La virtualizzazione usa altezze stimate fisse (26/32 px): sufficiente per
+  liste piatte; da rivedere se le card diventeranno multielemento.
+- Persistenza al riavvio: fase 04 (oggi il modello è in-memory).
 
 ## Fase 01 — dettaglio (2026-07-19)
 

@@ -1,6 +1,7 @@
 import { INTERNAL_NEWTAB_URL } from "@businessbox/shared";
-import type { PageState } from "@businessbox/contracts";
+import type { PageCard } from "@businessbox/contracts";
 import { useActivePage, useShellStore } from "../store";
+import { requestPinToggle } from "../actions";
 import { Omnibox } from "./Omnibox";
 import { SettingsMenu } from "./SettingsMenu";
 
@@ -29,7 +30,7 @@ function NavButton({
   );
 }
 
-function PageChip({ page, active }: { page: PageState; active: boolean }) {
+function PageChip({ page, active }: { page: PageCard; active: boolean }) {
   return (
     <div
       className={`group flex h-8 max-w-44 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-sm ${
@@ -44,30 +45,48 @@ function PageChip({ page, active }: { page: PageState; active: boolean }) {
         <span className="h-4 w-4 shrink-0 rounded-sm bg-zinc-300" />
       )}
       <span className="truncate text-zinc-800">{page.title || page.url}</span>
-      {page.pinned && (
-        <button
-          type="button"
-          title="Sblocca pagina"
-          className="hidden shrink-0 text-xs text-zinc-400 hover:text-zinc-700 group-hover:block"
-          onClick={(e) => {
-            e.stopPropagation();
-            void window.businessbox.setPinned(page.id, false);
-          }}
-        >
-          ✕
-        </button>
+      {page.dirtyState && (
+        <span className="shrink-0 text-xs text-amber-500" title="Modifiche non salvate">
+          ●
+        </span>
       )}
+      <button
+        type="button"
+        title={page.pinned ? "Sblocca pagina" : "Blocca in alto (max 3)"}
+        className={`hidden shrink-0 text-xs group-hover:block ${
+          page.pinned ? "text-blue-500 hover:text-blue-700" : "text-zinc-400 hover:text-zinc-700"
+        }`}
+        onClick={(e) => {
+          e.stopPropagation();
+          void requestPinToggle(page.id, !page.pinned);
+        }}
+      >
+        ⚲
+      </button>
+      <button
+        type="button"
+        title="Chiudi (archivia nella sidebar)"
+        className="hidden shrink-0 text-xs text-zinc-400 group-hover:block hover:text-red-600"
+        onClick={(e) => {
+          e.stopPropagation();
+          void window.businessbox.closePage(page.id);
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }
 
 export function TopBar() {
   const activePage = useActivePage();
-  const pages = useShellStore((s) => s.browser.pages);
+  const browser = useShellStore((s) => s.browser);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
   const toggleAiPanel = useShellStore((s) => s.toggleAiPanel);
 
-  const pinnedPages = pages.filter((p) => p.pinned);
+  const pinnedPages = browser.pages.filter(
+    (p) => p.pinned && !p.archived && p.workspaceId === browser.activeWorkspaceId,
+  );
   const showActiveChip =
     activePage !== null && !activePage.pinned && activePage.url !== INTERNAL_NEWTAB_URL;
 
@@ -102,7 +121,7 @@ export function TopBar() {
       ) : (
         <NavButton
           label="Ricarica (Ctrl+R)"
-          disabled={!activePage?.hasView}
+          disabled={!activePage || activePage.url === INTERNAL_NEWTAB_URL}
           onClick={() => pageId && void window.businessbox.reload(pageId)}
         >
           ⟳

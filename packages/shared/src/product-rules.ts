@@ -12,6 +12,9 @@ export const DEFAULT_MAX_HOT_PAGES = 4;
 /** Massimo numero di pagine "warm" (renderer vivo ma non visibile) per default. */
 export const DEFAULT_MAX_WARM_PAGES = 6;
 
+/** Timeout di default prima che una pagina warm inattiva passi a cold. */
+export const DEFAULT_WARM_TO_COLD_MS = 5 * 60_000;
+
 /** URL interno della nuova scheda (nessun contenuto remoto, resa dalla shell React). */
 export const INTERNAL_NEWTAB_URL = "businessbox://newtab";
 

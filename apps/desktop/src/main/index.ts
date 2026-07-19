@@ -87,6 +87,9 @@ function createMainWindow(): void {
     }),
   );
 
+  controller.start();
+  window.on("closed", () => controller.dispose());
+
   window.once("ready-to-show", () => {
     window.show();
     // La shell parte con una newtab interna già attiva.

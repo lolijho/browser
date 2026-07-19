@@ -1,28 +1,25 @@
+import { join } from "node:path";
 import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
-import type { BrowserState, ContentBounds, PageState } from "@businessbox/contracts";
-import { DEFAULT_WORKSPACE_ID, INTERNAL_NEWTAB_URL } from "@businessbox/shared";
+import type {
+  BrowserState,
+  ContentBounds,
+  DeletePageResponse,
+  PageCard,
+  SetPinnedResponse,
+} from "@businessbox/contracts";
+import { PAGE_IPC_CHANNELS } from "@businessbox/contracts";
+import { INTERNAL_NEWTAB_URL } from "@businessbox/shared";
 import { resolveNavigationInput, type SearchEngineManager } from "@businessbox/search";
 import type { WorkspaceSessionManager } from "./workspace-session-manager";
-import { evaluatePinRequest } from "./pin-rules";
-
-interface PageEntry {
-  readonly id: string;
-  readonly workspaceId: string;
-  url: string;
-  title: string;
-  faviconUrl: string | null;
-  isLoading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
-  crashed: boolean;
-  loadError: PageState["loadError"];
-  pinned: boolean;
-  createdAt: string;
-  lastActiveAt: string;
-  view: WebContentsView | null;
-}
+import { TabStore, type CreatePageInput } from "./tab-store";
+import {
+  DEFAULT_LIFECYCLE_CONFIG,
+  computeDesiredLifecycle,
+  type LifecycleConfig,
+} from "./lifecycle-rules";
 
 const ALLOWED_NAVIGATION_PROTOCOLS = new Set(["http:", "https:"]);
+const LIFECYCLE_TICK_MS = 30_000;
 
 function isAllowedRemoteUrl(rawUrl: string): boolean {
   try {
@@ -36,150 +33,176 @@ export interface BrowserControllerOptions {
   window: BrowserWindow;
   sessions: WorkspaceSessionManager<Session>;
   searchManager: SearchEngineManager;
+  store?: TabStore;
+  lifecycleConfig?: LifecycleConfig;
   onStateChange: (snapshot: BrowserState) => void;
 }
 
 /**
- * Servizio del main process che possiede tutte le pagine remote:
- * creazione/distruzione WebContentsView, navigazione, bounds, eventi
- * (titolo, URL, favicon, loading, crash), popup → nuove pagine.
+ * Riconcilia il dominio Smart Tabs (TabStore) con i WebContentsView reali:
+ * crea/distrugge renderer secondo le regole hot/warm/cold, mantiene attaccata
+ * solo la view attiva, instrada eventi e navigazione.
  */
 export class BrowserController {
-  private readonly pages = new Map<string, PageEntry>();
-  private order: string[] = [];
-  private activePageId: string | null = null;
+  private readonly store: TabStore;
+  private readonly lifecycleConfig: LifecycleConfig;
+  private readonly views = new Map<string, WebContentsView>();
+  private readonly wcIdToPageId = new Map<number, string>();
   private attachedView: WebContentsView | null = null;
   private contentBounds: ContentBounds = { x: 0, y: 0, width: 0, height: 0 };
   private targetUrl: string | null = null;
+  private tickTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly options: BrowserControllerOptions) {}
-
-  // --- API pubblica (chiamata dai handler IPC e dal menu) ---
-
-  createPage(request: { url?: string; workspaceId?: string; activate?: boolean } = {}): PageState {
-    const now = new Date().toISOString();
-    const page: PageEntry = {
-      id: crypto.randomUUID(),
-      workspaceId: request.workspaceId ?? DEFAULT_WORKSPACE_ID,
-      url: INTERNAL_NEWTAB_URL,
-      title: "Nuova pagina",
-      faviconUrl: null,
-      isLoading: false,
-      canGoBack: false,
-      canGoForward: false,
-      crashed: false,
-      loadError: null,
-      pinned: false,
-      createdAt: now,
-      lastActiveAt: now,
-      view: null,
-    };
-    this.pages.set(page.id, page);
-    this.order.push(page.id);
-
-    const targetUrl = request.url;
-    if (targetUrl && targetUrl !== INTERNAL_NEWTAB_URL) {
-      this.loadUrl(page, targetUrl);
-    }
-    if (request.activate ?? true) {
-      this.activatePage(page.id);
-    } else {
-      this.emit();
-    }
-    return this.toPageState(page);
+  constructor(private readonly options: BrowserControllerOptions) {
+    this.store = options.store ?? new TabStore();
+    this.lifecycleConfig = options.lifecycleConfig ?? DEFAULT_LIFECYCLE_CONFIG;
   }
 
-  closePage(pageId: string): void {
-    const page = this.mustGet(pageId);
-    this.destroyView(page);
-    this.pages.delete(pageId);
-    this.order = this.order.filter((id) => id !== pageId);
+  start(): void {
+    this.tickTimer = setInterval(() => this.update(), LIFECYCLE_TICK_MS);
+  }
 
-    if (this.activePageId === pageId) {
-      this.activePageId = null;
-      const fallback = this.order.at(-1);
-      if (fallback) {
-        this.activatePage(fallback);
-        return;
-      }
-      // Il browser ha sempre una pagina attiva: ricrea una newtab interna.
-      this.createPage();
-      return;
+  dispose(): void {
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
     }
-    this.emit();
+  }
+
+  // --- API pubblica ---
+
+  createPage(request: CreatePageInput & { activate?: boolean } = {}): PageCard {
+    const card = this.store.createPage(request);
+    if (card.url !== INTERNAL_NEWTAB_URL) {
+      this.loadUrl(card.id, card.url);
+    }
+    if (request.activate ?? true) {
+      this.store.activatePage(card.id);
+      this.targetUrl = null;
+    }
+    this.update();
+    return card;
   }
 
   activatePage(pageId: string): void {
-    const page = this.mustGet(pageId);
-    this.activePageId = pageId;
-    page.lastActiveAt = new Date().toISOString();
+    this.store.activatePage(pageId);
     this.targetUrl = null;
-    this.syncActiveView();
-    this.emit();
+    this.restoreIfCold(pageId);
+    this.update();
   }
 
   navigate(pageId: string, input: string): void {
-    const page = this.mustGet(pageId);
     const resolved = resolveNavigationInput(input, this.options.searchManager);
     if (resolved === INTERNAL_NEWTAB_URL) {
-      this.destroyView(page);
-      page.url = INTERNAL_NEWTAB_URL;
-      page.title = "Nuova pagina";
-      page.faviconUrl = null;
-      page.loadError = null;
-      page.crashed = false;
-      this.syncActiveView();
-      this.emit();
+      this.destroyView(pageId);
+      this.store.navigationStarted(pageId, INTERNAL_NEWTAB_URL);
+      this.store.patchRuntime(pageId, { title: "Nuova pagina", faviconUrl: null });
+      this.update();
       return;
     }
-    this.loadUrl(page, resolved);
-    this.emit();
+    this.loadUrl(pageId, resolved);
+    this.update();
   }
 
   goBack(pageId: string): void {
-    const wc = this.mustGet(pageId).view?.webContents;
+    const wc = this.views.get(pageId)?.webContents;
     if (wc && wc.navigationHistory.canGoBack()) {
       wc.navigationHistory.goBack();
     }
   }
 
   goForward(pageId: string): void {
-    const wc = this.mustGet(pageId).view?.webContents;
+    const wc = this.views.get(pageId)?.webContents;
     if (wc && wc.navigationHistory.canGoForward()) {
       wc.navigationHistory.goForward();
     }
   }
 
   reload(pageId: string): void {
-    const page = this.mustGet(pageId);
-    if (!page.view) {
+    const card = this.store.getCard(pageId);
+    if (!card) {
       return;
     }
-    // Copre anche il ripristino post-crash e il retry dalla pagina di errore.
-    page.crashed = false;
-    page.loadError = null;
-    page.view.webContents.reload();
-    this.syncActiveView();
-    this.emit();
+    const view = this.views.get(pageId);
+    if (!view) {
+      // Pagina cold: il reload è un restore nella stessa session partition.
+      this.restoreIfCold(pageId);
+      this.update();
+      return;
+    }
+    this.store.patchRuntime(pageId, { crashed: false, loadError: null });
+    view.webContents.reload();
+    this.update();
   }
 
   stop(pageId: string): void {
-    this.mustGet(pageId).view?.webContents.stop();
+    this.views.get(pageId)?.webContents.stop();
   }
 
-  setPinned(pageId: string, pinned: boolean): { ok: boolean; reason?: string } {
-    const page = this.mustGet(pageId);
-    const pinnedIds = this.order.filter((id) => this.pages.get(id)?.pinned);
-    const verdict = evaluatePinRequest(pinnedIds, pageId, pinned);
-    if (verdict.ok) {
-      page.pinned = pinned;
-      this.emit();
+  setPinned(pageId: string, pinned: boolean, replacePageId?: string): SetPinnedResponse {
+    const result = this.store.setPinned(pageId, pinned, replacePageId);
+    this.update();
+    return result;
+  }
+
+  archivePage(pageId: string, archived: boolean): void {
+    this.store.archivePage(pageId, archived);
+    if (archived) {
+      this.ensureActivePage();
     }
-    return verdict;
+    this.update();
+  }
+
+  deletePage(pageId: string, force = false): DeletePageResponse {
+    const result = this.store.deletePage(pageId, force);
+    if (result.ok) {
+      this.destroyView(pageId);
+      this.ensureActivePage();
+    }
+    this.update();
+    return result;
+  }
+
+  movePage(pageId: string, workBoxId: string | null): void {
+    this.store.movePage(pageId, workBoxId);
+    this.update();
+  }
+
+  duplicatePage(pageId: string): void {
+    const copy = this.store.duplicatePage(pageId);
+    if (copy.url !== INTERNAL_NEWTAB_URL) {
+      this.loadUrl(copy.id, copy.url);
+    }
+    this.store.activatePage(copy.id);
+    this.update();
+  }
+
+  setKeepAlive(pageId: string, keepAlive: boolean): void {
+    this.store.setKeepAlive(pageId, keepAlive);
+    this.update();
+  }
+
+  createWorkspace(name: string): void {
+    const workspace = this.store.createWorkspace(name);
+    this.store.switchWorkspace(workspace.id);
+    this.ensureActivePage();
+    this.update();
+  }
+
+  switchWorkspace(workspaceId: string): void {
+    this.store.switchWorkspace(workspaceId);
+    this.ensureActivePage();
+    this.targetUrl = null;
+    this.update();
+  }
+
+  createWorkBox(name: string): void {
+    this.store.createWorkBox(name);
+    this.update();
   }
 
   openDevTools(pageId: string): void {
-    this.mustGet(pageId).view?.webContents.openDevTools({ mode: "detach" });
+    this.views.get(pageId)?.webContents.openDevTools({ mode: "detach" });
   }
 
   setContentBounds(bounds: ContentBounds): void {
@@ -188,65 +211,103 @@ export class BrowserController {
   }
 
   getActivePageId(): string | null {
-    return this.activePageId;
+    return this.store.getActivePageId();
   }
 
   getSnapshot(): BrowserState {
-    return {
-      pages: this.order
-        .map((id) => this.pages.get(id))
-        .filter((page): page is PageEntry => page !== undefined)
-        .map((page) => this.toPageState(page)),
-      activePageId: this.activePageId,
-      targetUrl: this.targetUrl,
-    };
+    return this.store.getSnapshot(this.targetUrl);
+  }
+
+  /** Eventi dal preload delle pagine remote, autenticati dal webContents id. */
+  handlePageDirtyEvent(webContentsId: number, dirty: boolean): void {
+    const pageId = this.wcIdToPageId.get(webContentsId);
+    if (pageId) {
+      this.store.setDirty(pageId, dirty);
+      this.update();
+    }
+  }
+
+  handlePageScrollEvent(webContentsId: number, y: number): void {
+    const pageId = this.wcIdToPageId.get(webContentsId);
+    if (pageId) {
+      this.store.setScroll(pageId, y);
+    }
   }
 
   // --- internals ---
 
-  private mustGet(pageId: string): PageEntry {
-    const page = this.pages.get(pageId);
-    if (!page) {
-      throw new Error(`Pagina inesistente: ${pageId}`);
+  private ensureActivePage(): void {
+    if (this.store.getActivePageId()) {
+      return;
     }
-    return page;
+    const fallback = this.store.pickFallbackPageId(this.store.getActiveWorkspaceId());
+    if (fallback) {
+      this.store.activatePage(fallback);
+      this.restoreIfCold(fallback);
+      return;
+    }
+    const card = this.store.createPage();
+    this.store.activatePage(card.id);
   }
 
-  private loadUrl(page: PageEntry, url: string): void {
+  private restoreIfCold(pageId: string): void {
+    const card = this.store.getCard(pageId);
+    if (!card || this.views.has(pageId) || card.url === INTERNAL_NEWTAB_URL) {
+      return;
+    }
+    this.loadUrl(pageId, card.url);
+  }
+
+  private loadUrl(pageId: string, url: string): void {
+    const card = this.store.getCard(pageId);
+    if (!card) {
+      return;
+    }
     if (!isAllowedRemoteUrl(url)) {
-      page.loadError = { code: 0, description: "Protocollo non consentito", failedUrl: url };
-      this.syncActiveView();
+      this.store.patchRuntime(pageId, {
+        loadError: { code: 0, description: "Protocollo non consentito", failedUrl: url },
+      });
       return;
     }
-    page.loadError = null;
-    page.crashed = false;
-    this.ensureView(page);
-    void page.view?.webContents.loadURL(url);
+    this.store.navigationStarted(pageId, url);
+    const view = this.ensureView(card);
+    void view.webContents.loadURL(url);
   }
 
-  private ensureView(page: PageEntry): void {
-    if (page.view) {
-      return;
+  private ensureView(card: PageCard): WebContentsView {
+    const existing = this.views.get(card.id);
+    if (existing) {
+      return existing;
+    }
+    const workspaceSession = this.options.sessions.getSession(card.workspaceId);
+    const expectedPartition = this.options.sessions.getPartition(card.workspaceId);
+    if (expectedPartition !== card.sessionPartition) {
+      throw new Error(
+        `Partizione incoerente per la pagina ${card.id}: ${card.sessionPartition} ≠ ${expectedPartition}`,
+      );
     }
     const view = new WebContentsView({
       webPreferences: {
-        session: this.options.sessions.getSession(page.workspaceId),
-        // Nessun preload: le pagine remote non ricevono alcuna API privilegiata.
+        session: workspaceSession,
+        // Preload isolato: solo dirty-state e scroll, nulla è esposto alla pagina.
+        preload: join(__dirname, "../preload/page.js"),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
       },
     });
-    page.view = view;
-    this.wireWebContents(page, view.webContents);
-    this.syncActiveView();
+    this.views.set(card.id, view);
+    this.wcIdToPageId.set(view.webContents.id, card.id);
+    this.store.patchRuntime(card.id, { hasView: true });
+    this.wireWebContents(card.id, card.workspaceId, view.webContents);
+    return view;
   }
 
-  private wireWebContents(page: PageEntry, wc: WebContents): void {
+  private wireWebContents(pageId: string, workspaceId: string, wc: WebContents): void {
     wc.setWindowOpenHandler(({ url }) => {
-      // I popup diventano nuove pagine nello stesso workspace, mai finestre arbitrarie.
+      // I popup diventano nuove PageCard figlie, mai finestre arbitrarie.
       if (isAllowedRemoteUrl(url)) {
-        this.createPage({ url, workspaceId: page.workspaceId, activate: true });
+        this.createPage({ url, workspaceId, parentPageId: pageId, activate: true });
       }
       return { action: "deny" };
     });
@@ -262,40 +323,56 @@ export class BrowserController {
     });
 
     wc.on("did-start-loading", () => {
-      page.isLoading = true;
-      this.emit();
+      this.store.patchRuntime(pageId, { isLoading: true });
+      this.update();
     });
 
     wc.on("did-stop-loading", () => {
-      page.isLoading = false;
-      this.updateNavigationState(page, wc);
-      this.emit();
+      this.store.patchRuntime(pageId, {
+        isLoading: false,
+        canGoBack: wc.navigationHistory.canGoBack(),
+        canGoForward: wc.navigationHistory.canGoForward(),
+      });
+      this.update();
+    });
+
+    wc.on("did-finish-load", () => {
+      const card = this.store.getCard(pageId);
+      if (card?.scrollPosition && card.scrollPosition > 0) {
+        wc.send(PAGE_IPC_CHANNELS.restoreScroll, { y: card.scrollPosition });
+      }
     });
 
     wc.on("page-title-updated", (_event, title) => {
-      page.title = title;
-      this.emit();
+      this.store.patchRuntime(pageId, { title });
+      this.update();
     });
 
     wc.on("page-favicon-updated", (_event, favicons) => {
-      const candidate = favicons.find((f) => f.startsWith("https://")) ?? null;
-      page.faviconUrl = candidate;
-      this.emit();
+      this.store.patchRuntime(pageId, {
+        faviconUrl: favicons.find((f) => f.startsWith("https://")) ?? null,
+      });
+      this.update();
     });
 
     wc.on("did-navigate", (_event, url) => {
-      page.url = url;
-      page.loadError = null;
-      this.updateNavigationState(page, wc);
-      this.syncActiveView();
-      this.emit();
+      this.store.patchRuntime(pageId, {
+        url,
+        loadError: null,
+        canGoBack: wc.navigationHistory.canGoBack(),
+        canGoForward: wc.navigationHistory.canGoForward(),
+      });
+      this.update();
     });
 
     wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
       if (isMainFrame) {
-        page.url = url;
-        this.updateNavigationState(page, wc);
-        this.emit();
+        this.store.patchRuntime(pageId, {
+          url,
+          canGoBack: wc.navigationHistory.canGoBack(),
+          canGoForward: wc.navigationHistory.canGoForward(),
+        });
+        this.update();
       }
     });
 
@@ -304,44 +381,66 @@ export class BrowserController {
       if (!isMainFrame || errorCode === -3) {
         return;
       }
-      page.isLoading = false;
-      page.loadError = { code: errorCode, description: errorDescription, failedUrl: validatedURL };
-      this.syncActiveView();
-      this.emit();
+      this.store.patchRuntime(pageId, {
+        isLoading: false,
+        loadError: { code: errorCode, description: errorDescription, failedUrl: validatedURL },
+      });
+      this.update();
     });
 
     wc.on("render-process-gone", (_event, details) => {
       if (details.reason === "clean-exit") {
         return;
       }
-      page.crashed = true;
-      page.isLoading = false;
-      this.syncActiveView();
-      this.emit();
+      this.store.patchRuntime(pageId, { crashed: true, isLoading: false });
+      this.update();
     });
 
     wc.on("update-target-url", (_event, url) => {
-      if (page.id === this.activePageId) {
+      if (pageId === this.store.getActivePageId()) {
         this.targetUrl = url === "" ? null : url;
         this.emit();
       }
     });
   }
 
-  private updateNavigationState(page: PageEntry, wc: WebContents): void {
-    page.canGoBack = wc.navigationHistory.canGoBack();
-    page.canGoForward = wc.navigationHistory.canGoForward();
+  /** Riconciliazione: applica hot/warm/cold, distrugge i renderer cold, attacca l'attiva. */
+  private update(): void {
+    const cards = this.store.listCards();
+    const desired = computeDesiredLifecycle(
+      cards.map((card) => ({
+        id: card.id,
+        workspaceId: card.workspaceId,
+        pinned: card.pinned,
+        archived: card.archived,
+        keepAlive: card.keepAlive,
+        dirtyState: card.dirtyState,
+        hasRenderer: this.views.has(card.id),
+        lastActiveAt: card.lastActiveAt,
+      })),
+      this.store.getActivePageId(),
+      this.store.getActiveWorkspaceId(),
+      this.lifecycleConfig,
+      Date.now(),
+    );
+
+    for (const [pageId, state] of desired) {
+      if (state === "cold" && this.views.has(pageId)) {
+        this.destroyView(pageId);
+      }
+      this.store.setLifecycle(pageId, state);
+    }
+
+    this.syncActiveView();
+    this.emit();
   }
 
-  /**
-   * Mantiene attaccata alla finestra SOLO la view della pagina attiva,
-   * e solo se in condizione di essere mostrata (niente crash/errore):
-   * negli altri casi la shell React rende la pagina interna corrispondente.
-   */
   private syncActiveView(): void {
-    const active = this.activePageId ? this.pages.get(this.activePageId) : undefined;
+    const activeId = this.store.getActivePageId();
+    const activeCard = activeId ? this.store.getCard(activeId) : undefined;
+    const view = activeId ? (this.views.get(activeId) ?? null) : null;
     const shouldShow =
-      active && active.view && !active.crashed && !active.loadError ? active.view : null;
+      activeCard && view && !activeCard.crashed && !activeCard.loadError ? view : null;
 
     if (this.attachedView === shouldShow) {
       this.applyBoundsToAttachedView();
@@ -370,35 +469,25 @@ export class BrowserController {
     });
   }
 
-  private destroyView(page: PageEntry): void {
-    if (!page.view) {
+  private destroyView(pageId: string): void {
+    const view = this.views.get(pageId);
+    if (!view) {
       return;
     }
-    if (this.attachedView === page.view) {
-      this.options.window.contentView.removeChildView(page.view);
+    if (this.attachedView === view) {
+      this.options.window.contentView.removeChildView(view);
       this.attachedView = null;
     }
-    page.view.webContents.close();
-    page.view = null;
-  }
-
-  private toPageState(page: PageEntry): PageState {
-    return {
-      id: page.id,
-      workspaceId: page.workspaceId,
-      url: page.url,
-      title: page.title,
-      faviconUrl: page.faviconUrl,
-      isLoading: page.isLoading,
-      canGoBack: page.canGoBack,
-      canGoForward: page.canGoForward,
-      crashed: page.crashed,
-      loadError: page.loadError,
-      pinned: page.pinned,
-      hasView: page.view !== null,
-      createdAt: page.createdAt,
-      lastActiveAt: page.lastActiveAt,
-    };
+    this.wcIdToPageId.delete(view.webContents.id);
+    view.webContents.close();
+    this.views.delete(pageId);
+    this.store.patchRuntime(pageId, {
+      hasView: false,
+      isLoading: false,
+      canGoBack: false,
+      canGoForward: false,
+      crashed: false,
+    });
   }
 
   private emit(): void {

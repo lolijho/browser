@@ -5,6 +5,7 @@
  */
 export const IPC_CHANNELS = {
   appGetInfo: "app:get-info",
+  appCopyText: "app:copy-text",
   browserGetState: "browser:get-state",
   browserCreatePage: "browser:create-page",
   browserClosePage: "browser:close-page",
@@ -15,7 +16,15 @@ export const IPC_CHANNELS = {
   browserReload: "browser:reload",
   browserStop: "browser:stop",
   browserSetPinned: "browser:set-pinned",
+  browserArchivePage: "browser:archive-page",
+  browserDeletePage: "browser:delete-page",
+  browserMovePage: "browser:move-page",
+  browserDuplicatePage: "browser:duplicate-page",
+  browserSetKeepAlive: "browser:set-keep-alive",
   browserOpenDevtools: "browser:open-devtools",
+  workspaceCreate: "workspace:create",
+  workspaceSwitch: "workspace:switch",
+  workboxCreate: "workbox:create",
   layoutSetContentBounds: "layout:set-content-bounds",
 } as const;
 
@@ -25,8 +34,22 @@ export const IPC_EVENTS = {
   uiCommand: "event:ui-command",
 } as const;
 
+/**
+ * Canali usati dal preload delle pagine remote (page → main).
+ * Sono unidirezionali (send) e il main accetta solo mittenti registrati.
+ */
+export const PAGE_IPC_CHANNELS = {
+  dirtyChanged: "page:dirty-changed",
+  scrollChanged: "page:scroll-changed",
+  /** main → page: ripristina la posizione di scroll dopo un restore da cold. */
+  restoreScroll: "page:restore-scroll",
+} as const;
+
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 export type IpcEvent = (typeof IPC_EVENTS)[keyof typeof IPC_EVENTS];
+export type PageIpcChannel = (typeof PAGE_IPC_CHANNELS)[keyof typeof PAGE_IPC_CHANNELS];
 
 export const IPC_CHANNEL_ALLOWLIST: readonly IpcChannel[] = Object.values(IPC_CHANNELS);
 export const IPC_EVENT_ALLOWLIST: readonly IpcEvent[] = Object.values(IPC_EVENTS);
+export const PAGE_IPC_CHANNEL_ALLOWLIST: readonly PageIpcChannel[] =
+  Object.values(PAGE_IPC_CHANNELS);

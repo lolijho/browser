@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ContentArea } from "./components/ContentArea";
 import { AIPanel } from "./components/AIPanel";
 import { StatusBar } from "./components/StatusBar";
+import { GlobalDialogs } from "./components/dialogs/GlobalDialogs";
 
 export function App() {
   const sidebarOpen = useShellStore((s) => s.sidebarOpen);
@@ -21,6 +22,7 @@ export function App() {
         {aiPanelOpen && <AIPanel />}
       </div>
       <StatusBar />
+      <GlobalDialogs />
     </div>
   );
 }

@@ -12,14 +12,17 @@
     "build:linux": "electron-vite build && electron-builder --linux --publish never",
     "build:win": "electron-vite build && electron-builder --win --publish never",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.preload-page.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run"
   },
   "dependencies": {
     "@businessbox/contracts": "workspace:*",
     "@businessbox/search": "workspace:*",
     "@businessbox/shared": "workspace:*",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@tanstack/react-virtual": "^3.13.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3",

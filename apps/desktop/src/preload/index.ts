@@ -6,7 +6,8 @@ import {
   type BrowserState,
   type ContentBounds,
   type CreatePageRequest,
-  type PageState,
+  type DeletePageResponse,
+  type PageCard,
   type SetPinnedResponse,
 } from "@businessbox/contracts";
 
@@ -33,8 +34,8 @@ const bridge = {
   getBrowserState: (): Promise<BrowserState> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserGetState, {}) as Promise<BrowserState>,
 
-  createPage: (request: CreatePageRequest = {}): Promise<PageState> =>
-    ipcRenderer.invoke(IPC_CHANNELS.browserCreatePage, request) as Promise<PageState>,
+  createPage: (request: CreatePageRequest = {}): Promise<PageCard> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserCreatePage, request) as Promise<PageCard>,
 
   closePage: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserClosePage, { pageId }) as Promise<void>,
@@ -57,11 +58,46 @@ const bridge = {
   stop: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserStop, { pageId }) as Promise<void>,
 
-  setPinned: (pageId: string, pinned: boolean): Promise<SetPinnedResponse> =>
+  setPinned: (
+    pageId: string,
+    pinned: boolean,
+    replacePageId?: string,
+  ): Promise<SetPinnedResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserSetPinned, {
       pageId,
       pinned,
+      replacePageId,
     }) as Promise<SetPinnedResponse>,
+
+  archivePage: (pageId: string, archived: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserArchivePage, { pageId, archived }) as Promise<void>,
+
+  deletePage: (pageId: string, force?: boolean): Promise<DeletePageResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserDeletePage, {
+      pageId,
+      force,
+    }) as Promise<DeletePageResponse>,
+
+  movePage: (pageId: string, workBoxId: string | null): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserMovePage, { pageId, workBoxId }) as Promise<void>,
+
+  duplicatePage: (pageId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserDuplicatePage, { pageId }) as Promise<void>,
+
+  setKeepAlive: (pageId: string, keepAlive: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserSetKeepAlive, { pageId, keepAlive }) as Promise<void>,
+
+  createWorkspace: (name: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.workspaceCreate, { name }) as Promise<void>,
+
+  switchWorkspace: (workspaceId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.workspaceSwitch, { workspaceId }) as Promise<void>,
+
+  createWorkBox: (name: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.workboxCreate, { name }) as Promise<void>,
+
+  copyText: (text: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.appCopyText, { text }) as Promise<void>,
 
   openDevTools: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserOpenDevtools, { pageId }) as Promise<void>,
