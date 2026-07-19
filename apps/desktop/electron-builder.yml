@@ -18,7 +18,8 @@ asar: true
 npmRebuild: false
 nodeGypRebuild: false
 
-artifactName: ${name}-${version}-${os}-${arch}.${ext}
+# Nome letterale: ${name} risolverebbe "@businessbox/desktop" e la "/" romperebbe il percorso.
+artifactName: businessbox-browser-${version}-${os}-${arch}.${ext}
 
 mac:
   category: public.app-category.productivity
