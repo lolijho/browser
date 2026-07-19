@@ -6,11 +6,15 @@ export const logLevelSchema = z
   .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
   .default("info");
 
-/** Variabili richieste dall'API (apps/api). */
+/**
+ * Variabili richieste dall'API (apps/api).
+ * API_HOST default 127.0.0.1: il bind su 0.0.0.0 deve essere una scelta esplicita
+ * (container/produzione), non un default ereditato quando arriveranno route sensibili.
+ */
 export const apiEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,
   LOG_LEVEL: logLevelSchema,
-  API_HOST: z.string().min(1).default("0.0.0.0"),
+  API_HOST: z.string().min(1).default("127.0.0.1"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

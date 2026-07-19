@@ -6,6 +6,11 @@ describe("parseEnv(apiEnvSchema)", () => {
     const env = parseEnv(apiEnvSchema, {});
     expect(env.NODE_ENV).toBe("development");
     expect(env.API_PORT).toBe(3000);
+    expect(env.API_HOST).toBe("127.0.0.1");
+  });
+
+  it("consente il bind esplicito su tutte le interfacce", () => {
+    const env = parseEnv(apiEnvSchema, { API_HOST: "0.0.0.0" });
     expect(env.API_HOST).toBe("0.0.0.0");
   });
 

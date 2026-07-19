@@ -7,6 +7,15 @@ import { buildAppInfo } from "./app-info";
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
 
+/** Solo URL https validi dopo normalizzazione WHATWG possono uscire verso il sistema. */
+function isSafeExternalUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -26,9 +35,10 @@ function createWindow(): void {
   window.once("ready-to-show", () => window.show());
 
   // Nessuna finestra arbitraria: i link esterni HTTPS vanno al browser di sistema.
-  // Dalla fase 01 i popup diventeranno nuove PageCard gestite dal browser controller.
+  // Il protocollo va verificato sull'URL normalizzato (new URL), non sulla stringa
+  // grezza. Dalla fase 01 i popup diventeranno PageCard gestite dal browser controller.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) {
+    if (isSafeExternalUrl(url)) {
       void shell.openExternal(url);
     }
     return { action: "deny" };
