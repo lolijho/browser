@@ -12,6 +12,22 @@ export {
 } from "./health.js";
 export { appInfoSchema, releaseChannelSchema, type AppInfo } from "./app-info.js";
 export {
+  aiChatMessageSchema,
+  aiSourceSchema,
+  aiChatApiRequestSchema,
+  aiSummarizeApiRequestSchema,
+  aiHealthResponseSchema,
+  aiPageContextResponseSchema,
+  setAllowAiRequestSchema,
+  type AiChatMessage,
+  type AiSourcePayload,
+  type AiChatApiRequest,
+  type AiSummarizeApiRequest,
+  type AiHealthResponse,
+  type AiPageContextResponse,
+  type SetAllowAiRequest,
+} from "./ai-api.js";
+export {
   extractedContentSchema,
   localSearchRequestSchema,
   localSearchResultSchema,

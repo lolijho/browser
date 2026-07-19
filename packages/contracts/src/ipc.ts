@@ -36,6 +36,8 @@ export const IPC_CHANNELS = {
   searchLocal: "search:local",
   browserSetAllowScreenshot: "browser:set-allow-screenshot",
   browserDeleteScreenshot: "browser:delete-screenshot",
+  browserSetAllowAi: "browser:set-allow-ai",
+  aiGetPageContext: "ai:get-page-context",
   layoutSetContentBounds: "layout:set-content-bounds",
 } as const;
 

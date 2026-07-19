@@ -109,6 +109,13 @@ export class TabStore {
     this.touch(card);
   }
 
+  /** allowAI=false impedisce qualunque invio della pagina all'AI (prompt 05). */
+  setAllowAI(pageId: string, allow: boolean): void {
+    const card = this.mustGet(pageId);
+    card.allowAI = allow;
+    this.touch(card);
+  }
+
   // --- workspace ---
 
   createWorkspace(name: string, id: string = crypto.randomUUID()): Workspace {
@@ -176,6 +183,7 @@ export class TabStore {
       dirtyState: false,
       archived: false,
       allowScreenshot: true,
+      allowAI: true,
       sessionPartition: workspaceSessionPartition(workspaceId),
       scrollPosition: null,
       faviconUrl: null,

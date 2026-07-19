@@ -27,6 +27,30 @@ export const workerEnvSchema = z.object({
 });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
+/**
+ * Variabili OpenRouter/AI (prompt 05) — SOLO server-side.
+ * OPENROUTER_API_KEY assente ⇒ il backend usa DisabledAIProvider e il
+ * browser continua a funzionare senza AI.
+ */
+export const aiEnvSchema = z.object({
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_BASE_URL: z.url().default("https://openrouter.ai/api/v1"),
+  OPENROUTER_MODEL: z.string().min(1).default("z-ai/glm-5.2"),
+  OPENROUTER_HTTP_REFERER: z.string().default(""),
+  OPENROUTER_APP_TITLE: z.string().default("BusinessBox Browser"),
+  OPENROUTER_REASONING_EFFORT: z.enum(["high", "xhigh"]).default("high"),
+  OPENROUTER_MAX_TOKENS: z.coerce.number().int().positive().default(8192),
+  OPENROUTER_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  OPENROUTER_PROVIDER_SORT: z.enum(["price", "throughput", "latency"]).default("price"),
+  OPENROUTER_ALLOW_FALLBACKS: z.stringbool().default(true),
+  OPENROUTER_REQUIRE_PARAMETERS: z.stringbool().default(true),
+  OPENROUTER_DATA_COLLECTION: z.enum(["deny", "allow"]).default("deny"),
+  OPENROUTER_ZDR: z.stringbool().default(true),
+  AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().positive().default(2_000_000),
+  AI_REQUEST_TOKEN_LIMIT: z.coerce.number().int().positive().default(32_000),
+});
+export type AiEnv = z.infer<typeof aiEnvSchema>;
+
 export class EnvValidationError extends Error {
   constructor(public readonly issues: readonly string[]) {
     super(`Configurazione d'ambiente non valida:\n${issues.join("\n")}`);

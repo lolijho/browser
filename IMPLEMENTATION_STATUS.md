@@ -4,19 +4,83 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 
 ## Stato fasi
 
-| Fase | Argomento                                  | Stato          |
-| ---- | ------------------------------------------ | -------------- |
-| 00   | Bootstrap, architettura e monorepo         | ✅ completata  |
-| 01   | Shell browser Electron (`WebContentsView`) | ✅ completata  |
-| 02   | Smart Tabs, sidebar e WorkBox              | ✅ completata  |
-| 03   | Gestore multi-motore di ricerca            | ✅ completata  |
-| 04   | Persistenza locale, estrazione e memoria   | ✅ completata  |
-| 05   | AI con GLM 5.2 tramite OpenRouter          | ⬜ da iniziare |
-| 06   | Backend, autenticazione e sincronizzazione | ⬜ da iniziare |
-| 07   | Hardening di sicurezza e privacy           | ⬜ da iniziare |
-| 08   | Docker e deploy su Coolify                 | ⬜ da iniziare |
-| 09   | Test E2E, build desktop e release          | ⬜ da iniziare |
-| 10   | Audit finale e consegna alpha              | ⬜ da iniziare |
+| Fase | Argomento                                  | Stato                               |
+| ---- | ------------------------------------------ | ----------------------------------- |
+| 00   | Bootstrap, architettura e monorepo         | ✅ completata                       |
+| 01   | Shell browser Electron (`WebContentsView`) | ✅ completata                       |
+| 02   | Smart Tabs, sidebar e WorkBox              | ✅ completata                       |
+| 03   | Gestore multi-motore di ricerca            | ✅ completata                       |
+| 04   | Persistenza locale, estrazione e memoria   | ✅ completata                       |
+| 05   | AI con GLM 5.2 tramite OpenRouter          | 🟡 nucleo completato (v. dettaglio) |
+| 06   | Backend, autenticazione e sincronizzazione | ⬜ da iniziare                      |
+| 07   | Hardening di sicurezza e privacy           | ⬜ da iniziare                      |
+| 08   | Docker e deploy su Coolify                 | ⬜ da iniziare                      |
+| 09   | Test E2E, build desktop e release          | ⬜ da iniziare                      |
+| 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+
+## Fase 05 — dettaglio (2026-07-19)
+
+### Fatto (nucleo funzionante end-to-end)
+
+- **`@businessbox/ai` completo**: interfaccia `AIProvider` del prompt 05
+  (streamChat, generateStructured, summarize, classify, healthCheck) con TRE
+  implementazioni: **`OpenRouterGLMProvider`** (reale), `MockAIProvider`,
+  `DisabledAIProvider`. Nessuna integrazione diretta Z.ai.
+- **OpenRouter**: endpoint OpenAI-compatible `/chat/completions`, streaming
+  SSE (parser robusto: chunk incompleti, commenti, `[DONE]`, CRLF), header di
+  attribuzione, provider routing `{sort:price, allow_fallbacks,
+require_parameters, data_collection:deny, zdr:true}`; **mai** il campo
+  `models` (fallback solo tra provider dello stesso `z-ai/glm-5.2`); retry
+  limitato con backoff esponenziale + jitter (mai su 4xx/auth), timeout,
+  abort, **circuit breaker** (5 errori/30s → stop 60s).
+- **Reasoning**: `high` default, `xhigh` selezionabile per richiesta; mai
+  chain-of-thought esposta (system prompt esplicito).
+- **Structured output**: `response_format: json_schema` + validazione Zod
+  obbligatoria; schema di classificazione del prompt con **soglie 0.80/0.55**
+  (auto / suggerisci / Da organizzare) implementate e testate.
+- **Anti prompt-injection**: `sanitizeContentForAI()` (bearer/JWT/API key/
+  cookie/carte/password nelle query → [REDACTED]), delimitazione fonti
+  `<<<FONTE>>>…<<<FINE-FONTE>>>` con istruzione esplicita "dati, non
+  istruzioni", test con pagina malevola.
+- **Budget**: limiti per richiesta e giornalieri (Zod env), 429 a budget
+  esaurito, **il browser continua a funzionare** (test); telemetria senza
+  contenuti (modello, provider effettivo, token in/out/reasoning, costo,
+  latenza, TTFT, finish reason, errore normalizzato).
+- **Backend** (`/api/v1/ai`): chat SSE ritrasmesso al desktop (hijack,
+  disconnessione→abort), summarize, health, usage; chiave SOLO server-side
+  (`aiEnvSchema`); senza chiave → `DisabledAIProvider` (503/errore tipizzato,
+  mai crash). CORS per il desktop (restrizione in fase 07-08).
+- **Desktop**: flag **`allowAI` per pagina** (migrazione DB v3, toggle nel
+  menu contestuale) — `allowAI=false` impedisce l'invio del contesto (test di
+  accettazione); contesto = snapshot estratto sanitizzato nel main (mai il
+  DOM live); **pannello AI reale**: chat streaming sulla pagina attiva,
+  "Riassumi pagina", fonti usate mostrate, annulla generazione, errori chiari
+  offline/budget.
+
+### Rimandato (dichiarato, non simulato)
+
+- Tool calling (search_local_pages, draft di note/task/email/report) e
+  relative bozze; riassunto/chat WorkBox; confronto pagine; estrazione
+  entità in UI; pipeline RAG completa con ricerca semantica (richiede
+  pgvector, fase 06); classificazione automatica collegata al worker (fase
+  06); limiti per utente/organizzazione/mese su `ai_usage` (fase 06).
+
+### Test eseguiti (fase 05)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 17/17 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **114 test** (ai 16: SSE parser, sanitize/injection, soglie,
+  budget, breaker, OpenRouter con fetch finto — body/routing/no-models,
+  auth senza retry, 5xx con retry, breaker aperto, structured Zod, abort;
+  api 9: stream SSE ritrasmesso con fonti e [DONE], 400, 429 budget,
+  summarize con usage, disabled 503 e health sempre ok).
+
+### Verifica reale OpenRouter
+
+- La chiamata live a `z-ai/glm-5.2` (chiave reale, supporto effettivo di
+  `reasoning.effort=xhigh` con `require_parameters=true`) va verificata con
+  `OPENROUTER_API_KEY` impostata: questo ambiente non ha la chiave né
+  l'egress. Procedura: `.env` con la chiave → `pnpm dev:api` →
+  `pnpm dev:desktop` → pannello AI.
 
 ## Fase 04 — dettaglio (2026-07-19)
 

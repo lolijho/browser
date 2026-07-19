@@ -31,6 +31,7 @@ export const pageCardSchema = z.object({
   dirtyState: z.boolean(),
   archived: z.boolean(),
   allowScreenshot: z.boolean(),
+  allowAI: z.boolean(),
   sessionPartition: z.string().min(1),
   scrollPosition: z.number().nullable(),
   faviconUrl: z.string().nullable(),

@@ -1,8 +1,9 @@
-import { apiEnvSchema, parseEnv } from "@businessbox/config";
+import { aiEnvSchema, apiEnvSchema, parseEnv } from "@businessbox/config";
 import { buildServer } from "./server.js";
 
 const env = parseEnv(apiEnvSchema);
-const app = buildServer(env);
+const aiEnv = parseEnv(aiEnvSchema);
+const app = await buildServer(env, aiEnv);
 
 const shutdown = async (signal: string): Promise<void> => {
   app.log.info({ signal }, "arresto in corso");

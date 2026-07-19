@@ -3,6 +3,7 @@ import {
   IPC_CHANNELS,
   IPC_EVENTS,
   type AddCustomEngineRequest,
+  type AiPageContextResponse,
   type AppInfo,
   type BrowserState,
   type ContentBounds,
@@ -153,6 +154,14 @@ const bridge = {
 
   deleteScreenshot: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserDeleteScreenshot, { pageId }) as Promise<void>,
+
+  setAllowAi: (pageId: string, allow: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserSetAllowAi, { pageId, allow }) as Promise<void>,
+
+  aiGetPageContext: (pageId: string): Promise<AiPageContextResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.aiGetPageContext, {
+      pageId,
+    }) as Promise<AiPageContextResponse>,
 
   onOpenSearchProposal: (callback: (payload: unknown) => void): (() => void) =>
     subscribe(IPC_EVENTS.openSearchProposal, callback),

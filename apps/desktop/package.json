@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@businessbox/ai": "workspace:*",
     "@businessbox/contracts": "workspace:*",
     "@businessbox/database": "workspace:*",
     "@businessbox/search": "workspace:*",

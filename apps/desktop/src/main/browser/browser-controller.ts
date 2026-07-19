@@ -408,6 +408,15 @@ export class BrowserController {
     this.update();
   }
 
+  setAllowAI(pageId: string, allow: boolean): void {
+    this.store.setAllowAI(pageId, allow);
+    this.update();
+  }
+
+  getPageCard(pageId: string): PageCard | undefined {
+    return this.store.getCard(pageId);
+  }
+
   deleteScreenshot(pageId: string): void {
     this.options.onScreenshotDeleted?.(pageId);
   }

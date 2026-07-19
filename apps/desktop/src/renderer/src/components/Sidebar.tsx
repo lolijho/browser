@@ -159,6 +159,12 @@ function PageRow({
           >
             Elimina screenshot salvato
           </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => void window.businessbox.setAllowAi(page.id, !page.allowAI)}
+          >
+            {page.allowAI ? "Escludi dall'AI" : "Consenti all'AI"}
+          </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-zinc-200" />
           <ContextMenu.Item
             className={`${menuItemClass} text-red-600`}

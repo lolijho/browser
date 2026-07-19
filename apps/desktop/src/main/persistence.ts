@@ -129,6 +129,10 @@ export class PersistenceService {
     return this.repos.searchLocal(request);
   }
 
+  getSnapshotText(pageId: string): { title: string; url: string; text: string } | null {
+    return this.repos.getSnapshotText(pageId);
+  }
+
   close(): void {
     this.flush();
     this.db.close();

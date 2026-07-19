@@ -1,5 +1,6 @@
 import type {
   AddCustomEngineRequest,
+  AiPageContextResponse,
   AppInfo,
   BrowserState,
   ContentBounds,
@@ -55,6 +56,8 @@ declare global {
       searchLocal(request: LocalSearchRequest): Promise<LocalSearchResponse>;
       setAllowScreenshot(pageId: string, allow: boolean): Promise<void>;
       deleteScreenshot(pageId: string): Promise<void>;
+      setAllowAi(pageId: string, allow: boolean): Promise<void>;
+      aiGetPageContext(pageId: string): Promise<AiPageContextResponse>;
       onOpenSearchProposal(callback: (payload: unknown) => void): () => void;
       openDevTools(pageId: string): Promise<void>;
       setContentBounds(bounds: ContentBounds): Promise<void>;

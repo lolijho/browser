@@ -1,44 +1,23 @@
-/**
- * Astrazione del provider AI (prompt 00: "Provider AI astratto, con OpenRouter
- * implementato in una fase successiva"; firma da prompt 05).
- *
- * `OpenRouterGLMProvider` e `MockAIProvider` arrivano nella fase 05.
- * Qui vive solo il contratto più `DisabledAIProvider`, l'implementazione
- * usata quando l'AI è spenta o non configurata.
- */
-
-export interface AIMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
-
-export interface AIChatRequest {
-  messages: AIMessage[];
-  reasoningEffort?: "high" | "xhigh";
-  maxTokens?: number;
-}
-
-export interface AIStreamChunk {
-  type: "text" | "done" | "error";
-  text?: string;
-  error?: string;
-}
-
-export interface AIProviderHealth {
-  status: "ok" | "degraded" | "disabled" | "down";
-  model?: string;
-  detail?: string;
-}
-
-export interface AIProvider {
-  streamChat(request: AIChatRequest, signal?: AbortSignal): AsyncIterable<AIStreamChunk>;
-  healthCheck(): Promise<AIProviderHealth>;
-}
+import {
+  AiError,
+  type AIChatRequest,
+  type AIProvider,
+  type AIProviderHealth,
+  type AIStreamChunk,
+  type AIStructuredRequest,
+  type ClassificationRequest,
+  type ClassificationResult,
+  type SummarizeRequest,
+  type SummaryResult,
+} from "./types.js";
 
 /** Errore sollevato quando si invoca l'AI mentre è disabilitata. */
-export class AIDisabledError extends Error {
+export class AIDisabledError extends AiError {
   constructor() {
-    super("Il provider AI è disabilitato: il browser continua a funzionare senza AI.");
+    super({
+      code: "disabled",
+      message: "Il provider AI è disabilitato: il browser continua a funzionare senza AI.",
+    });
     this.name = "AIDisabledError";
   }
 }
@@ -51,6 +30,18 @@ export class DisabledAIProvider implements AIProvider {
   // eslint-disable-next-line require-yield -- il provider disabilitato non produce chunk: fallisce subito.
   async *streamChat(_request: AIChatRequest, _signal?: AbortSignal): AsyncIterable<AIStreamChunk> {
     throw new AIDisabledError();
+  }
+
+  generateStructured<T>(_request: AIStructuredRequest<T>): Promise<T> {
+    return Promise.reject(new AIDisabledError());
+  }
+
+  summarize(_request: SummarizeRequest): Promise<SummaryResult> {
+    return Promise.reject(new AIDisabledError());
+  }
+
+  classify(_request: ClassificationRequest): Promise<ClassificationResult> {
+    return Promise.reject(new AIDisabledError());
   }
 
   healthCheck(): Promise<AIProviderHealth> {

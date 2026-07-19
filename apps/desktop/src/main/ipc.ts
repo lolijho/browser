@@ -23,14 +23,17 @@ import {
   pageIdRequestSchema,
   pageScrollEventSchema,
   removeEngineRequestSchema,
+  setAllowAiRequestSchema,
   setAllowScreenshotRequestSchema,
   setKeepAliveRequestSchema,
   setPinnedRequestSchema,
   setSearchDefaultRequestSchema,
   switchWorkspaceRequestSchema,
   updateCustomEngineRequestSchema,
+  type AiPageContextResponse,
   type IpcChannel,
 } from "@businessbox/contracts";
+import { sanitizeContentForAI } from "@businessbox/ai";
 import type { ConfigurableSearchEngineManager } from "@businessbox/search";
 import type { BrowserController } from "./browser/browser-controller";
 import type { PersistenceService } from "./persistence";
@@ -175,6 +178,33 @@ export function registerBrowserIpc(
   );
   handle(IPC_CHANNELS.browserDeleteScreenshot, pageIdRequestSchema, ({ pageId }) =>
     controller.deleteScreenshot(pageId),
+  );
+  handle(IPC_CHANNELS.browserSetAllowAi, setAllowAiRequestSchema, ({ pageId, allow }) =>
+    controller.setAllowAI(pageId, allow),
+  );
+  // Contesto AI: rispetta allowAI e sanitizza SEMPRE prima di uscire dal main.
+  handle(
+    IPC_CHANNELS.aiGetPageContext,
+    pageIdRequestSchema,
+    ({ pageId }): AiPageContextResponse => {
+      const card = controller.getPageCard(pageId);
+      if (!card || !card.allowAI) {
+        return { allowAI: false, source: null };
+      }
+      const snapshot = persistence.getSnapshotText(pageId);
+      if (!snapshot) {
+        return { allowAI: true, source: null };
+      }
+      return {
+        allowAI: true,
+        source: {
+          id: pageId,
+          title: sanitizeContentForAI(snapshot.title).slice(0, 300),
+          url: snapshot.url.slice(0, 2048),
+          text: sanitizeContentForAI(snapshot.text).slice(0, 60_000),
+        },
+      };
+    },
   );
   handle(IPC_CHANNELS.layoutSetContentBounds, contentBoundsSchema, (bounds) =>
     controller.setContentBounds(bounds),

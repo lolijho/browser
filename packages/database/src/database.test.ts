@@ -38,6 +38,7 @@ function makeCard(id: string, workspaceId = "default", patch: Partial<PageCard> 
     dirtyState: false,
     archived: false,
     allowScreenshot: true,
+    allowAI: true,
     sessionPartition: `persist:workspace-${workspaceId}`,
     scrollPosition: null,
     faviconUrl: null,
@@ -90,7 +91,7 @@ describe("migrazioni", () => {
     driver.exec(MIGRATIONS[0]!.sql);
     driver.exec("PRAGMA user_version = 1");
     const applied = runMigrations(driver);
-    expect(applied).toEqual([2]);
+    expect(applied).toEqual(MIGRATIONS.filter((m) => m.version > 1).map((m) => m.version));
     expect(getSchemaVersion(driver)).toBe(CURRENT_SCHEMA_VERSION);
     driver.close();
   });

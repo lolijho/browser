@@ -115,15 +115,16 @@ export class Repositories {
           .prepare(
             `INSERT INTO page_cards (
                id, workspace_id, workbox_id, parent_page_id, url, title, domain, state,
-               pinned, keep_alive, dirty_state, archived, allow_screenshot, session_partition,
+               pinned, keep_alive, dirty_state, archived, allow_screenshot, allow_ai, session_partition,
                scroll_position, favicon_url, opened_at, last_active_at, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                workspace_id=excluded.workspace_id, workbox_id=excluded.workbox_id,
                parent_page_id=excluded.parent_page_id, url=excluded.url, title=excluded.title,
                domain=excluded.domain, state=excluded.state, pinned=excluded.pinned,
                keep_alive=excluded.keep_alive, dirty_state=excluded.dirty_state,
                archived=excluded.archived, allow_screenshot=excluded.allow_screenshot,
+               allow_ai=excluded.allow_ai,
                scroll_position=excluded.scroll_position, favicon_url=excluded.favicon_url,
                last_active_at=excluded.last_active_at, updated_at=excluded.updated_at`,
           )
@@ -141,6 +142,7 @@ export class Repositories {
             c.dirtyState ? 1 : 0,
             c.archived ? 1 : 0,
             c.allowScreenshot ? 1 : 0,
+            c.allowAI ? 1 : 0,
             c.sessionPartition,
             c.scrollPosition,
             c.faviconUrl,
@@ -201,6 +203,7 @@ export class Repositories {
         dirtyState: false,
         archived: bool(row["archived"]),
         allowScreenshot: bool(row["allow_screenshot"]),
+        allowAI: bool(row["allow_ai"]),
         sessionPartition: str(row["session_partition"]),
         scrollPosition: row["scroll_position"] === null ? null : Number(row["scroll_position"]),
         faviconUrl: strOrNull(row["favicon_url"]),
@@ -310,6 +313,14 @@ export class Repositories {
     return row
       ? { contentHash: str(row["content_hash"]), screenshotPath: strOrNull(row["screenshot_path"]) }
       : null;
+  }
+
+  /** Testo estratto per il contesto AI (titolo, url, testo). */
+  getSnapshotText(pageId: string): { title: string; url: string; text: string } | null {
+    const row = this.db.driver
+      .prepare("SELECT title, url, text FROM page_snapshots WHERE page_id = ?")
+      .get(pageId);
+    return row ? { title: str(row["title"]), url: str(row["url"]), text: str(row["text"]) } : null;
   }
 
   // --- cronologia di navigazione ---

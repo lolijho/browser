@@ -242,6 +242,13 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX idx_history_page ON page_navigation_history(page_id, navigated_at DESC);
     `,
   },
+  {
+    version: 3,
+    name: "allow-ai",
+    sql: `
+      ALTER TABLE page_cards ADD COLUMN allow_ai INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

@@ -15,7 +15,9 @@
     "@businessbox/contracts": "workspace:*",
     "@businessbox/shared": "workspace:*",
     "fastify": "^5.10.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@businessbox/ai": "workspace:*",
+    "@fastify/cors": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

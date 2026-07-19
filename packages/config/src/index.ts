@@ -1,5 +1,7 @@
 export {
   apiEnvSchema,
+  aiEnvSchema,
+  type AiEnv,
   workerEnvSchema,
   nodeEnvSchema,
   logLevelSchema,

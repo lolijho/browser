@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 // I package workspace sono ESM: vengono inclusi nel bundle (non externalizzati)
 // perché main e preload sono emessi in CJS.
 const bundledWorkspacePackages = [
+  "@businessbox/ai",
   "@businessbox/shared",
   "@businessbox/contracts",
   "@businessbox/search",
