@@ -1,4 +1,4 @@
-export { type SearchEngine } from "./types.js";
+export { type SearchEngine, type SearchSettings } from "./types.js";
 export {
   QUERY_PLACEHOLDER,
   buildSearchUrl,
@@ -8,7 +8,14 @@ export {
 export { classifyOmniboxInput, type OmniboxIntent } from "./omnibox.js";
 export { BUILT_IN_SEARCH_ENGINES, DEFAULT_SEARCH_ENGINE_ID } from "./engines.js";
 export {
-  StaticSearchEngineManager,
-  resolveNavigationInput,
-  type SearchEngineManager,
+  ConfigurableSearchEngineManager,
+  DEFAULT_PRIVATE_ENGINE_ID,
+  type EngineSelectionContext,
+  type EngineMutationResult,
+  type AddCustomEngineInput,
 } from "./manager.js";
+export {
+  parseOpenSearchDescriptor,
+  convertOpenSearchTemplate,
+  type OpenSearchDescriptor,
+} from "./opensearch.js";

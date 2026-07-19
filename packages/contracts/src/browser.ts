@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { searchSettingsSchema } from "./search.js";
 
 /** Errore di caricamento di una pagina (mostrato dalla pagina interna di errore). */
 export const pageLoadErrorSchema = z.object({
@@ -75,6 +76,7 @@ export const browserStateSchema = z.object({
   activeWorkspaceId: z.string().min(1),
   activePageId: z.string().nullable(),
   targetUrl: z.string().nullable(),
+  searchSettings: searchSettingsSchema,
 });
 export type BrowserState = z.infer<typeof browserStateSchema>;
 
@@ -95,6 +97,8 @@ export type PageIdRequest = z.infer<typeof pageIdRequestSchema>;
 export const navigateRequestSchema = z.object({
   pageId: z.string().min(1),
   input: z.string().min(1),
+  /** Motore scelto "solo per questa ricerca" (keyword+Tab o menu omnibox). */
+  engineId: z.string().min(1).optional(),
 });
 export type NavigateRequest = z.infer<typeof navigateRequestSchema>;
 

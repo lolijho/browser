@@ -9,7 +9,7 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 00   | Bootstrap, architettura e monorepo         | ✅ completata  |
 | 01   | Shell browser Electron (`WebContentsView`) | ✅ completata  |
 | 02   | Smart Tabs, sidebar e WorkBox              | ✅ completata  |
-| 03   | Gestore multi-motore di ricerca            | ⬜ da iniziare |
+| 03   | Gestore multi-motore di ricerca            | ✅ completata  |
 | 04   | Persistenza locale, estrazione e memoria   | ⬜ da iniziare |
 | 05   | AI con GLM 5.2 tramite OpenRouter          | ⬜ da iniziare |
 | 06   | Backend, autenticazione e sincronizzazione | ⬜ da iniziare |
@@ -17,6 +17,60 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 08   | Docker e deploy su Coolify                 | ⬜ da iniziare |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare |
+
+## Fase 03 — dettaglio (2026-07-19)
+
+### Fatto
+
+- **`ConfigurableSearchEngineManager`** (`@businessbox/search`, puro e testato):
+  7 motori preinstallati nel registry centralizzato (Google `g`, Brave `br`,
+  Bing `b`, DuckDuckGo `d`, Startpage `s`, Qwant `q`, Ecosia `e`), default
+  globale Google, **default modalità privata Brave** (pronto per la fase 07),
+  default per workspace con ereditarietà del globale, selezione temporanea mai
+  persistita, risoluzione keyword (workspace prima di globale) e alias.
+- **Precedenze omnibox**: override esplicito → `:keyword query` → `/alias
+query` → URL completo → dominio → ricerca col default del contesto. Le
+  ricerche web normali non toccano mai l'AI. Slot comandi browser/AI riservati
+  alle fasi 05+ (documentato).
+- **Motori custom**: validazioni severe (HTTPS salvo localhost dev, `%s`
+  obbligatorio, blocco `javascript:`/`data:`/`file:`, keyword univoca nello
+  scope, **rifiuto di credenziali nei template** — parametri api_key/token/…),
+  query sempre `encodeURIComponent`. Rimozione consentita solo per
+  custom/opensearch con reset dei default.
+- **OpenSearch**: rilevamento nel preload isolato (`link rel=search`), fetch
+  del descriptor solo HTTPS ≤64KB nel main, parsing conservativo (ShortName +
+  template html, `{searchTerms}`→`%s`, parametri opzionali rimossi),
+  **proposta con conferma esplicita** (banner Aggiungi/Ignora), dedupe per
+  template e per descriptor già visto.
+- **Import/export impostazioni** (JSON validato Zod; i built-in restano
+  canonici; export negli appunti, import da textarea).
+- **UI**: icona del motore a sinistra nell'omnibox con menu (usa solo questa
+  volta / default globale / default workspace / rimuovi / gestisci…), modalità
+  **keyword+Tab** con chip del motore temporaneo (Esc/Backspace per uscire),
+  dialogo "Motori di ricerca" (elenco, default, aggiunta custom con errori
+  inline, import/export), suggerimenti **solo locali** (pagine aperte del
+  workspace, etichettati come locali).
+- Suggerimenti remoti: NON implementati — restano disabilitati finché non
+  esisterà il consenso persistito (fase 04); mai attivi in privata (fase 07).
+
+### Test eseguiti (fase 03)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 15/15 — `pnpm build` ✅ 11/11.
+- `pnpm test` ✅ **80 test** (search 33: cambio Google↔Brave senza riavvio,
+  default workspace con ereditarietà, `:br crm per pmi` → Brave e query
+  successiva → default, alias, precedenze, override temporaneo non persistito,
+  custom valido funzionante, template pericolosi/credenziali rifiutati,
+  keyword duplicata rifiutata, import/export roundtrip, OpenSearch parsing e
+  non-installazione senza conferma).
+
+### Problemi aperti / note
+
+- I suggerimenti remoti (`suggestUrlTemplate`) attendono il consenso
+  persistito della fase 04.
+- Le impostazioni motori sono in-memory: la persistenza (tabelle
+  `search_engines`, `workspace_search_settings`) arriva con la fase 04.
+- La modalità privata che usa il default Brave arriva con la fase 07 (l'API
+  `getDefaultFor({privateMode})` è già pronta e testata).
 
 ## Fase 02 — dettaglio (2026-07-19)
 

@@ -42,6 +42,15 @@ export function validateSearchUrlTemplate(
     return { valid: false, reason: "Il template deve usare HTTPS" };
   }
 
+  // Nessuna API key nel template (prompt 03): parametri dal nome sospetto con
+  // valore fisso (non %s) vengono rifiutati.
+  const SENSITIVE_PARAM_RE = /^(api_?key|apikey|token|secret|auth[_-]?token|access[_-]?token)$/i;
+  for (const [key, value] of url.searchParams) {
+    if (SENSITIVE_PARAM_RE.test(key) && value !== QUERY_PLACEHOLDER) {
+      return { valid: false, reason: `Il template non può contenere credenziali (${key})` };
+    }
+  }
+
   return { valid: true };
 }
 

@@ -325,7 +325,7 @@ export class TabStore {
     return this.listCards().filter((card) => card.workspaceId === workspaceId);
   }
 
-  getSnapshot(targetUrl: string | null): BrowserState {
+  getSnapshot(targetUrl: string | null): Omit<BrowserState, "searchSettings"> {
     return {
       workspaces: [...this.workspaces.values()]
         .sort((a, b) => a.order - b.order)

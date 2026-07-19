@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { browserStateSchema, uiCommandSchema, type BrowserState } from "@businessbox/contracts";
+import {
+  browserStateSchema,
+  openSearchProposalSchema,
+  uiCommandSchema,
+  type BrowserState,
+  type OpenSearchProposal,
+} from "@businessbox/contracts";
 import { DEFAULT_WORKSPACE_ID } from "@businessbox/shared";
 
 interface PendingPin {
@@ -22,6 +28,8 @@ interface ShellStore {
   searchQuery: string;
   pendingPin: PendingPin | null;
   pendingDelete: PendingDelete | null;
+  openSearchProposal: OpenSearchProposal | null;
+  showEngineManager: boolean;
 
   setBrowserState: (state: BrowserState) => void;
   toggleSidebar: () => void;
@@ -31,6 +39,8 @@ interface ShellStore {
   setSearchQuery: (query: string) => void;
   setPendingPin: (pending: PendingPin | null) => void;
   setPendingDelete: (pending: PendingDelete | null) => void;
+  setOpenSearchProposal: (proposal: OpenSearchProposal | null) => void;
+  setShowEngineManager: (show: boolean) => void;
 }
 
 export const useShellStore = create<ShellStore>((set) => ({
@@ -41,6 +51,12 @@ export const useShellStore = create<ShellStore>((set) => ({
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     activePageId: null,
     targetUrl: null,
+    searchSettings: {
+      engines: [],
+      globalDefaultEngineId: "google",
+      privateDefaultEngineId: "brave",
+      workspaceDefaults: {},
+    },
   },
   sidebarOpen: true,
   aiPanelOpen: false,
@@ -49,6 +65,8 @@ export const useShellStore = create<ShellStore>((set) => ({
   searchQuery: "",
   pendingPin: null,
   pendingDelete: null,
+  openSearchProposal: null,
+  showEngineManager: false,
 
   setBrowserState: (state) => set({ browser: state }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -58,6 +76,8 @@ export const useShellStore = create<ShellStore>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setPendingPin: (pending) => set({ pendingPin: pending }),
   setPendingDelete: (pending) => set({ pendingDelete: pending }),
+  setOpenSearchProposal: (proposal) => set({ openSearchProposal: proposal }),
+  setShowEngineManager: (show) => set({ showEngineManager: show }),
 }));
 
 /** Collega gli eventi push del main allo store, validando i payload con Zod. */
@@ -94,9 +114,17 @@ export function connectShellStore(): () => void {
     }
   });
 
+  const offProposal = window.businessbox.onOpenSearchProposal((payload) => {
+    const parsed = openSearchProposalSchema.safeParse(payload);
+    if (parsed.success) {
+      useShellStore.getState().setOpenSearchProposal(parsed.data);
+    }
+  });
+
   return () => {
     offState();
     offCommand();
+    offProposal();
   };
 }
 
@@ -109,4 +137,18 @@ export function useWorkspacePages() {
   return useShellStore((s) =>
     s.browser.pages.filter((p) => p.workspaceId === s.browser.activeWorkspaceId),
   );
+}
+
+/** Motore di default effettivo per il workspace attivo (override → globale). */
+export function useActiveSearchEngine() {
+  return useShellStore((s) => {
+    const settings = s.browser.searchSettings;
+    const overrideId = settings.workspaceDefaults[s.browser.activeWorkspaceId];
+    const engineId = overrideId ?? settings.globalDefaultEngineId;
+    return (
+      settings.engines.find((e) => e.id === engineId) ??
+      settings.engines.find((e) => e.id === settings.globalDefaultEngineId) ??
+      null
+    );
+  });
 }

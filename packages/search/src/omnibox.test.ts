@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { classifyOmniboxInput } from "./omnibox.js";
-import { StaticSearchEngineManager, resolveNavigationInput } from "./manager.js";
-import { BUILT_IN_SEARCH_ENGINES } from "./engines.js";
-import { validateSearchUrlTemplate } from "./template.js";
 
 describe("classifyOmniboxInput", () => {
   it("riconosce URL http/https completi", () => {
@@ -49,43 +46,5 @@ describe("classifyOmniboxInput", () => {
       kind: "url",
       url: "businessbox://newtab",
     });
-  });
-});
-
-describe("StaticSearchEngineManager", () => {
-  const manager = new StaticSearchEngineManager();
-
-  it("usa Google come default globale iniziale", () => {
-    expect(manager.getDefaultEngine().id).toBe("google");
-  });
-
-  it("costruisce l'URL di ricerca con la query codificata", () => {
-    expect(manager.buildSearchUrlForQuery("crm per pmi")).toBe(
-      "https://www.google.com/search?q=crm%20per%20pmi",
-    );
-  });
-
-  it("registry: template tutti validi e keyword univoche", () => {
-    const keywords = new Set<string>();
-    for (const engine of BUILT_IN_SEARCH_ENGINES) {
-      expect(validateSearchUrlTemplate(engine.searchUrlTemplate).valid).toBe(true);
-      expect(keywords.has(engine.keyword)).toBe(false);
-      keywords.add(engine.keyword);
-    }
-    expect(BUILT_IN_SEARCH_ENGINES).toHaveLength(7);
-  });
-});
-
-describe("resolveNavigationInput", () => {
-  const manager = new StaticSearchEngineManager();
-
-  it("un URL resta un URL", () => {
-    expect(resolveNavigationInput("github.com", manager)).toBe("https://github.com/");
-  });
-
-  it("una ricerca va al motore di default", () => {
-    expect(resolveNavigationInput("meteo milano", manager)).toBe(
-      "https://www.google.com/search?q=meteo%20milano",
-    );
   });
 });

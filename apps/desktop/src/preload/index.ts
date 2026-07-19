@@ -2,11 +2,14 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   IPC_CHANNELS,
   IPC_EVENTS,
+  type AddCustomEngineRequest,
   type AppInfo,
   type BrowserState,
   type ContentBounds,
   type CreatePageRequest,
   type DeletePageResponse,
+  type EngineMutationResponse,
+  type ExportSearchSettingsResponse,
   type PageCard,
   type SetPinnedResponse,
 } from "@businessbox/contracts";
@@ -43,8 +46,12 @@ const bridge = {
   activatePage: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserActivatePage, { pageId }) as Promise<void>,
 
-  navigate: (pageId: string, input: string): Promise<void> =>
-    ipcRenderer.invoke(IPC_CHANNELS.browserNavigate, { pageId, input }) as Promise<void>,
+  navigate: (pageId: string, input: string, engineId?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.browserNavigate, {
+      pageId,
+      input,
+      engineId,
+    }) as Promise<void>,
 
   goBack: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserGoBack, { pageId }) as Promise<void>,
@@ -98,6 +105,43 @@ const bridge = {
 
   copyText: (text: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.appCopyText, { text }) as Promise<void>,
+
+  setSearchDefault: (
+    engineId: string,
+    scope: "global" | "workspace" | "private",
+    workspaceId?: string,
+  ): Promise<EngineMutationResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchSetDefault, {
+      engineId,
+      scope,
+      workspaceId,
+    }) as Promise<EngineMutationResponse>,
+
+  clearWorkspaceSearchDefault: (workspaceId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchClearWorkspaceDefault, { workspaceId }) as Promise<void>,
+
+  addCustomEngine: (request: AddCustomEngineRequest): Promise<EngineMutationResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchAddCustom, request) as Promise<EngineMutationResponse>,
+
+  removeEngine: (engineId: string): Promise<EngineMutationResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchRemoveEngine, {
+      engineId,
+    }) as Promise<EngineMutationResponse>,
+
+  exportSearchSettings: (): Promise<ExportSearchSettingsResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchExport, {}) as Promise<ExportSearchSettingsResponse>,
+
+  importSearchSettings: (json: string): Promise<EngineMutationResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchImport, { json }) as Promise<EngineMutationResponse>,
+
+  decideOpenSearch: (proposalId: string, accept: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.searchOpenSearchDecision, {
+      proposalId,
+      accept,
+    }) as Promise<void>,
+
+  onOpenSearchProposal: (callback: (payload: unknown) => void): (() => void) =>
+    subscribe(IPC_EVENTS.openSearchProposal, callback),
 
   openDevTools: (pageId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.browserOpenDevtools, { pageId }) as Promise<void>,

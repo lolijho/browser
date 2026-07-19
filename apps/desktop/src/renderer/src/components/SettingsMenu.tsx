@@ -10,6 +10,7 @@ export function SettingsMenu() {
   const activePage = useActivePage();
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
   const toggleAiPanel = useShellStore((s) => s.toggleAiPanel);
+  const setShowEngineManager = useShellStore((s) => s.setShowEngineManager);
   const [info, setInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
@@ -50,6 +51,9 @@ export function SettingsMenu() {
             <span className="ml-auto text-xs text-zinc-400">Ctrl+Shift+A</span>
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-zinc-200" />
+          <DropdownMenu.Item className={itemClass} onSelect={() => setShowEngineManager(true)}>
+            Motori di ricerca…
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             className={itemClass}
             disabled={!activePage?.hasView}

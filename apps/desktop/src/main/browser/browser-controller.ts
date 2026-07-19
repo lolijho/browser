@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
+import { WebContentsView, net, type BrowserWindow, type Session, type WebContents } from "electron";
 import type {
   BrowserState,
   ContentBounds,
@@ -7,9 +7,12 @@ import type {
   PageCard,
   SetPinnedResponse,
 } from "@businessbox/contracts";
-import { PAGE_IPC_CHANNELS } from "@businessbox/contracts";
+import { PAGE_IPC_CHANNELS, type OpenSearchProposal } from "@businessbox/contracts";
 import { INTERNAL_NEWTAB_URL } from "@businessbox/shared";
-import { resolveNavigationInput, type SearchEngineManager } from "@businessbox/search";
+import {
+  parseOpenSearchDescriptor,
+  type ConfigurableSearchEngineManager,
+} from "@businessbox/search";
 import type { WorkspaceSessionManager } from "./workspace-session-manager";
 import { TabStore, type CreatePageInput } from "./tab-store";
 import {
@@ -20,6 +23,20 @@ import {
 
 const ALLOWED_NAVIGATION_PROTOCOLS = new Set(["http:", "https:"]);
 const LIFECYCLE_TICK_MS = 30_000;
+const OPENSEARCH_MAX_BYTES = 65536;
+
+/** Fetch del descriptor OpenSearch: solo https, dimensione limitata. */
+async function defaultFetchText(url: string): Promise<string> {
+  const response = await net.fetch(url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  if (text.length > OPENSEARCH_MAX_BYTES) {
+    throw new Error("Descriptor OpenSearch troppo grande");
+  }
+  return text;
+}
 
 function isAllowedRemoteUrl(rawUrl: string): boolean {
   try {
@@ -32,10 +49,13 @@ function isAllowedRemoteUrl(rawUrl: string): boolean {
 export interface BrowserControllerOptions {
   window: BrowserWindow;
   sessions: WorkspaceSessionManager<Session>;
-  searchManager: SearchEngineManager;
+  searchManager: ConfigurableSearchEngineManager;
   store?: TabStore;
   lifecycleConfig?: LifecycleConfig;
   onStateChange: (snapshot: BrowserState) => void;
+  onOpenSearchProposal: (proposal: OpenSearchProposal) => void;
+  /** Fetch del descriptor OpenSearch, iniettabile nei test. */
+  fetchText?: (url: string) => Promise<string>;
 }
 
 /**
@@ -91,8 +111,12 @@ export class BrowserController {
     this.update();
   }
 
-  navigate(pageId: string, input: string): void {
-    const resolved = resolveNavigationInput(input, this.options.searchManager);
+  navigate(pageId: string, input: string, engineOverrideId?: string): void {
+    const card = this.store.getCard(pageId);
+    const resolved = this.options.searchManager.resolveNavigation(input, {
+      ...(card ? { workspaceId: card.workspaceId } : {}),
+      ...(engineOverrideId ? { engineOverrideId } : {}),
+    });
     if (resolved === INTERNAL_NEWTAB_URL) {
       this.destroyView(pageId);
       this.store.navigationStarted(pageId, INTERNAL_NEWTAB_URL);
@@ -215,7 +239,15 @@ export class BrowserController {
   }
 
   getSnapshot(): BrowserState {
-    return this.store.getSnapshot(this.targetUrl);
+    return {
+      ...this.store.getSnapshot(this.targetUrl),
+      searchSettings: this.options.searchManager.getSettingsSnapshot(),
+    };
+  }
+
+  /** Ri-emette lo snapshot (usato dopo mutazioni delle impostazioni di ricerca). */
+  emitState(): void {
+    this.emit();
   }
 
   /** Eventi dal preload delle pagine remote, autenticati dal webContents id. */
@@ -232,6 +264,73 @@ export class BrowserController {
     if (pageId) {
       this.store.setScroll(pageId, y);
     }
+  }
+
+  private readonly openSearchProposals = new Map<string, OpenSearchProposal>();
+  private readonly openSearchSeen = new Set<string>();
+
+  /**
+   * OpenSearch (prompt 03): il rilevamento produce SOLO una proposta.
+   * L'installazione avviene esclusivamente con la conferma esplicita
+   * dell'utente (decideOpenSearch).
+   */
+  handleOpenSearchDetected(webContentsId: number, href: string, title?: string): void {
+    const pageId = this.wcIdToPageId.get(webContentsId);
+    if (!pageId) {
+      return;
+    }
+    let descriptorUrl: URL;
+    try {
+      descriptorUrl = new URL(href);
+    } catch {
+      return;
+    }
+    if (descriptorUrl.protocol !== "https:" || this.openSearchSeen.has(descriptorUrl.href)) {
+      return;
+    }
+    this.openSearchSeen.add(descriptorUrl.href);
+
+    const fetchText = this.options.fetchText ?? defaultFetchText;
+    void fetchText(descriptorUrl.href)
+      .then((xml) => {
+        const descriptor = parseOpenSearchDescriptor(xml);
+        if (!descriptor) {
+          return;
+        }
+        const alreadyInstalled = this.options.searchManager
+          .listEngines()
+          .some((engine) => engine.searchUrlTemplate === descriptor.searchUrlTemplate);
+        if (alreadyInstalled) {
+          return;
+        }
+        const proposal: OpenSearchProposal = {
+          proposalId: crypto.randomUUID(),
+          pageId,
+          name: title?.trim() || descriptor.shortName,
+          keyword: new URL(descriptor.searchUrlTemplate.replace("%s", "q")).hostname,
+          searchUrlTemplate: descriptor.searchUrlTemplate,
+          sourceUrl: descriptorUrl.href,
+        };
+        this.openSearchProposals.set(proposal.proposalId, proposal);
+        this.options.onOpenSearchProposal(proposal);
+      })
+      .catch(() => {
+        // Descriptor irraggiungibile o non valido: nessuna proposta.
+      });
+  }
+
+  decideOpenSearch(proposalId: string, accept: boolean): void {
+    const proposal = this.openSearchProposals.get(proposalId);
+    this.openSearchProposals.delete(proposalId);
+    if (!proposal || !accept) {
+      return;
+    }
+    this.options.searchManager.addOpenSearchEngine({
+      name: proposal.name,
+      keyword: proposal.keyword,
+      searchUrlTemplate: proposal.searchUrlTemplate,
+    });
+    this.emit();
   }
 
   // --- internals ---

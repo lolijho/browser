@@ -25,6 +25,14 @@ export const IPC_CHANNELS = {
   workspaceCreate: "workspace:create",
   workspaceSwitch: "workspace:switch",
   workboxCreate: "workbox:create",
+  searchSetDefault: "search:set-default",
+  searchClearWorkspaceDefault: "search:clear-workspace-default",
+  searchAddCustom: "search:add-custom",
+  searchUpdateCustom: "search:update-custom",
+  searchRemoveEngine: "search:remove-engine",
+  searchExport: "search:export",
+  searchImport: "search:import",
+  searchOpenSearchDecision: "search:opensearch-decision",
   layoutSetContentBounds: "layout:set-content-bounds",
 } as const;
 
@@ -32,6 +40,7 @@ export const IPC_CHANNELS = {
 export const IPC_EVENTS = {
   browserState: "event:browser-state",
   uiCommand: "event:ui-command",
+  openSearchProposal: "event:opensearch-proposal",
 } as const;
 
 /**
@@ -43,6 +52,8 @@ export const PAGE_IPC_CHANNELS = {
   scrollChanged: "page:scroll-changed",
   /** main → page: ripristina la posizione di scroll dopo un restore da cold. */
   restoreScroll: "page:restore-scroll",
+  /** page → main: trovato un link OpenSearch nella pagina. */
+  openSearchDetected: "page:opensearch-detected",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

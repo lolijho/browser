@@ -3,23 +3,32 @@ import { z } from "zod";
 import {
   IPC_CHANNELS,
   PAGE_IPC_CHANNELS,
+  addCustomEngineRequestSchema,
   archivePageRequestSchema,
+  clearWorkspaceDefaultRequestSchema,
   contentBoundsSchema,
   copyTextRequestSchema,
   createPageRequestSchema,
   createWorkBoxRequestSchema,
   createWorkspaceRequestSchema,
   deletePageRequestSchema,
+  importSearchSettingsRequestSchema,
   movePageRequestSchema,
   navigateRequestSchema,
+  openSearchDecisionRequestSchema,
+  openSearchDetectedEventSchema,
   pageDirtyEventSchema,
   pageIdRequestSchema,
   pageScrollEventSchema,
+  removeEngineRequestSchema,
   setKeepAliveRequestSchema,
   setPinnedRequestSchema,
+  setSearchDefaultRequestSchema,
   switchWorkspaceRequestSchema,
+  updateCustomEngineRequestSchema,
   type IpcChannel,
 } from "@businessbox/contracts";
+import type { ConfigurableSearchEngineManager } from "@businessbox/search";
 import type { BrowserController } from "./browser/browser-controller";
 
 /**
@@ -27,7 +36,11 @@ import type { BrowserController } from "./browser/browser-controller";
  * chiamata è accettata SOLO dal webContents della shell. I canali delle pagine
  * remote (dirty/scroll) sono autenticati tramite l'id del webContents mittente.
  */
-export function registerBrowserIpc(controller: BrowserController, shell: WebContents): void {
+export function registerBrowserIpc(
+  controller: BrowserController,
+  searchManager: ConfigurableSearchEngineManager,
+  shell: WebContents,
+): void {
   function handle<TSchema extends z.ZodType>(
     channel: IpcChannel,
     schema: TSchema,
@@ -52,8 +65,8 @@ export function registerBrowserIpc(controller: BrowserController, shell: WebCont
   handle(IPC_CHANNELS.browserActivatePage, pageIdRequestSchema, ({ pageId }) =>
     controller.activatePage(pageId),
   );
-  handle(IPC_CHANNELS.browserNavigate, navigateRequestSchema, ({ pageId, input }) =>
-    controller.navigate(pageId, input),
+  handle(IPC_CHANNELS.browserNavigate, navigateRequestSchema, ({ pageId, input, engineId }) =>
+    controller.navigate(pageId, input, engineId),
   );
   handle(IPC_CHANNELS.browserGoBack, pageIdRequestSchema, ({ pageId }) =>
     controller.goBack(pageId),
@@ -98,6 +111,55 @@ export function registerBrowserIpc(controller: BrowserController, shell: WebCont
     controller.createWorkBox(name),
   );
   handle(IPC_CHANNELS.appCopyText, copyTextRequestSchema, ({ text }) => clipboard.writeText(text));
+
+  // --- motori di ricerca (fase 03) ---
+  handle(
+    IPC_CHANNELS.searchSetDefault,
+    setSearchDefaultRequestSchema,
+    ({ engineId, scope, workspaceId }) => {
+      const result = searchManager.setDefault(scope, engineId, workspaceId);
+      controller.emitState();
+      return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+    },
+  );
+  handle(
+    IPC_CHANNELS.searchClearWorkspaceDefault,
+    clearWorkspaceDefaultRequestSchema,
+    ({ workspaceId }) => {
+      searchManager.clearWorkspaceDefault(workspaceId);
+      controller.emitState();
+    },
+  );
+  handle(IPC_CHANNELS.searchAddCustom, addCustomEngineRequestSchema, (payload) => {
+    const result = searchManager.addCustomEngine(payload);
+    controller.emitState();
+    return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+  });
+  handle(
+    IPC_CHANNELS.searchUpdateCustom,
+    updateCustomEngineRequestSchema,
+    ({ engineId, patch }) => {
+      const result = searchManager.updateCustomEngine(engineId, patch);
+      controller.emitState();
+      return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+    },
+  );
+  handle(IPC_CHANNELS.searchRemoveEngine, removeEngineRequestSchema, ({ engineId }) => {
+    const result = searchManager.removeEngine(engineId);
+    controller.emitState();
+    return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+  });
+  handle(IPC_CHANNELS.searchExport, z.object({}), () => ({
+    json: searchManager.exportSettings(),
+  }));
+  handle(IPC_CHANNELS.searchImport, importSearchSettingsRequestSchema, ({ json }) => {
+    const result = searchManager.importSettings(json);
+    controller.emitState();
+    return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+  });
+  handle(IPC_CHANNELS.searchOpenSearchDecision, openSearchDecisionRequestSchema, (payload) =>
+    controller.decideOpenSearch(payload.proposalId, payload.accept),
+  );
   handle(IPC_CHANNELS.layoutSetContentBounds, contentBoundsSchema, (bounds) =>
     controller.setContentBounds(bounds),
   );
@@ -114,6 +176,12 @@ export function registerBrowserIpc(controller: BrowserController, shell: WebCont
     const parsed = pageScrollEventSchema.safeParse(rawPayload);
     if (parsed.success) {
       controller.handlePageScrollEvent(event.sender.id, parsed.data.y);
+    }
+  });
+  ipcMain.on(PAGE_IPC_CHANNELS.openSearchDetected, (event, rawPayload: unknown) => {
+    const parsed = openSearchDetectedEventSchema.safeParse(rawPayload);
+    if (parsed.success) {
+      controller.handleOpenSearchDetected(event.sender.id, parsed.data.href, parsed.data.title);
     }
   });
 }

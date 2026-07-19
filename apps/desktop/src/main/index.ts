@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { BrowserWindow, Menu, app, ipcMain, session, type Session } from "electron";
 import { IPC_CHANNELS, IPC_EVENTS, type UiCommand } from "@businessbox/contracts";
 import { BRANDING } from "@businessbox/shared";
-import { StaticSearchEngineManager } from "@businessbox/search";
+import { ConfigurableSearchEngineManager } from "@businessbox/search";
 import { buildAppInfo } from "./app-info";
 import { BrowserController } from "./browser/browser-controller";
 import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
@@ -43,7 +43,7 @@ function createMainWindow(): void {
   shell.on("will-navigate", (event) => event.preventDefault());
 
   const sessions = new WorkspaceSessionManager<Session>(createWorkspaceSession);
-  const searchManager = new StaticSearchEngineManager();
+  const searchManager = new ConfigurableSearchEngineManager();
 
   const controller = new BrowserController({
     window,
@@ -54,9 +54,14 @@ function createMainWindow(): void {
         shell.send(IPC_EVENTS.browserState, snapshot);
       }
     },
+    onOpenSearchProposal: (proposal) => {
+      if (!shell.isDestroyed()) {
+        shell.send(IPC_EVENTS.openSearchProposal, proposal);
+      }
+    },
   });
 
-  registerBrowserIpc(controller, shell);
+  registerBrowserIpc(controller, searchManager, shell);
 
   const sendUiCommand = (command: UiCommand["command"]): void => {
     if (!shell.isDestroyed()) {

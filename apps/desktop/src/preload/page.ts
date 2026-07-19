@@ -95,3 +95,29 @@ ipcRenderer.on(PAGE_IPC_CHANNELS.restoreScroll, (_event, payload: unknown) => {
     window.scrollTo({ top: parsed.data.y, behavior: "instant" });
   }
 });
+
+// OpenSearch (prompt 03): segnala al main il descriptor dichiarato dalla pagina.
+// Solo rilevamento: nessuna installazione senza conferma dell'utente.
+function detectOpenSearch(): void {
+  const link = document.querySelector<HTMLLinkElement>(
+    'link[rel~="search"][type="application/opensearchdescription+xml"]',
+  );
+  if (!link?.href) {
+    return;
+  }
+  try {
+    const absolute = new URL(link.href, window.location.href).href;
+    ipcRenderer.send(PAGE_IPC_CHANNELS.openSearchDetected, {
+      href: absolute.slice(0, 2048),
+      title: (link.title || document.title || "").slice(0, 200),
+    });
+  } catch {
+    // href non valido: ignora.
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", detectOpenSearch, { once: true });
+} else {
+  detectOpenSearch();
+}
