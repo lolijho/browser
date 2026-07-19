@@ -28,8 +28,9 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
-  # Alpha senza certificati: nessuna firma/notarization simulata (prompt 09).
-  identity: null
+  # Alpha senza certificati Apple: electron-builder applica la firma AD-HOC
+  # (obbligatoria su Apple Silicon: senza firma macOS segnala "danneggiato").
+  # Niente notarization simulata (prompt 09); firma reale con certificati in fase 09.
   hardenedRuntime: false
   gatekeeperAssess: false
 
