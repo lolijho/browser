@@ -87,6 +87,11 @@ Su richiesta, parte del packaging della fase 09 è stata anticipata:
 Restano per la fase 09: matrice completa multi-OS su tag `v*`, canali, auto-update,
 firma/notarization con certificati reali.
 
+Esito verificato: run #3 del workflow (commit `ea11a26`) concluso con successo sul
+runner macOS; artifact `businessbox-browser-mac` (~489 MB: dmg+zip per arm64 e x64)
+pubblicato. I run #1-2 erano falliti per `${name}` nell'`artifactName` (la `/` di
+`@businessbox/desktop` veniva letta come directory), corretto con nome letterale.
+
 ### Limitazioni dell'ambiente di sviluppo remoto
 
 - Il binario Electron non è scaricabile in questo ambiente: la egress policy del proxy
