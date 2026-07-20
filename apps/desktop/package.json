@@ -4,6 +4,7 @@
   "private": true,
   "description": "BusinessBox Browser — app desktop Electron",
   "author": "BusinessBox",
+  "homepage": "https://github.com/lolijho/browser",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
