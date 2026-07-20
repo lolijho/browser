@@ -1,6 +1,6 @@
 # IMPLEMENTATION_STATUS
 
-Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
+Ultimo aggiornamento: 2026-07-20 — fase 08 completata.
 
 ## Stato fasi
 
@@ -14,9 +14,68 @@ Ultimo aggiornamento: 2026-07-19 — fase 00 completata.
 | 05   | AI con GLM 5.2 tramite OpenRouter          | 🟡 nucleo completato (v. dettaglio) |
 | 06   | Backend, autenticazione e sincronizzazione | ✅ completata                       |
 | 07   | Hardening di sicurezza e privacy           | ✅ completata                       |
-| 08   | Docker e deploy su Coolify                 | ⬜ da iniziare                      |
+| 08   | Docker e deploy su Coolify                 | ✅ completata                       |
 | 09   | Test E2E, build desktop e release          | ⬜ da iniziare                      |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+
+## Fase 08 — dettaglio (2026-07-20)
+
+### Fatto
+
+- **Compose (fonte di verità)**: `docker-compose.yml` (base), `docker-compose.dev.yml`
+  (override locale che pubblica le porte), `docker-compose.coolify.yml`
+  (standalone da selezionare in Coolify, con domini `SERVICE_FQDN_*`). Servizi:
+  `api`, `worker`, `admin`, `postgres` (pgvector/pgvector:pg16), `redis`, più
+  `minio` opzionale sotto profilo `storage`.
+- **Regole Coolify rispettate**: nessun `container_name` fisso; healthcheck reali
+  su tutti i servizi; volumi persistenti (`pgdata`, `redisdata`, `miniodata`);
+  reti private (`internal: true` per PostgreSQL/Redis, `web` per api/admin);
+  **PostgreSQL e Redis mai pubblicati**; solo api/admin verso il proxy; log su
+  stdout/stderr; `stop_grace_period` per lo shutdown; variabili richieste con
+  `${VAR:?messaggio}` (fallimento esplicito, nessun default insicuro).
+- **Dockerfile multi-stage non-root** (`infra/docker/Dockerfile.{api,worker,admin}`):
+  build con `pnpm install --frozen-lockfile` + `turbo run build` + `pnpm deploy
+  --prod --legacy` (api/worker) e output `standalone` di Next (admin); runtime su
+  utente `node`, nessun `.env` copiato (`.dockerignore`).
+- **Healthcheck reali**: api `/health/live`, admin `/api/health` (nuova route),
+  worker piccolo endpoint HTTP di liveness/readiness sul loopback (nuovo, con
+  `WORKER_HEALTH_HOST/PORT`), postgres `pg_isready`, redis `redis-cli ping`.
+- **Migrazioni idempotenti**: comando separato `apps/api/src/migrate.ts` →
+  `node dist/migrate.js` (script `migrate`), advisory lock già presente in
+  `migrate()`; non eseguite all'avvio di ogni replica. Wrapper `infra/scripts/migrate.sh`.
+- **Backup/restore**: `infra/scripts/backup-postgres.sh` (dump compresso,
+  retention, cifratura `age` opzionale) e `restore-postgres.sh` (con verifica del
+  conteggio tabelle).
+- **CI**: `.github/workflows/quality.yml` (lint, typecheck, test, build) e
+  `docker-build.yml` (valida config base/dev/coolify, build immagini, avvio stack,
+  migrazioni, attesa healthy, smoke test endpoint, push registry opzionale, deploy
+  Coolify via webhook — nessun secret hardcoded).
+- **Documentazione**: `docs/COOLIFY_DEPLOY.md` (12 punti); `.env.example` esteso
+  (POSTGRES_*, PUBLIC_API_URL, SENTRY_DSN, MinIO, note su JWT_REFRESH_SECRET/
+  ENCRYPTION_KEY non usati); README di `infra/docker`, `infra/scripts`, `infra/coolify`.
+
+### Test eseguiti (fase 08)
+
+- `docker compose config` ✅ su tutte le combinazioni: base+dev, coolify
+  (con `PUBLIC_API_URL`), base da solo, profilo `storage`. Verificato che
+  **postgres/redis non hanno porte pubblicate** e stanno solo sulla rete
+  `internal: true`; enforcement di `${VAR:?}` (fallisce senza segreti).
+- `pnpm deploy --prod --legacy` verificato per **api** e **worker**: dist +
+  dipendenze di produzione + package workspace presenti; i binari partono
+  (api bind ok; worker esce pulito senza `REDIS_URL`).
+- Build **admin standalone** verificata end-to-end: `server.js` avviato,
+  `/api/health` → `200 {"status":"ok"}`.
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 17/17 — `pnpm test` ✅ (config/worker
+  invariati) — `pnpm build` ✅ 11/11. `bash -n` ✅ sugli script.
+
+### Note
+
+- La verifica dell'avvio reale dello stack (build immagini + `up`) gira in CI
+  (`docker-build.yml`): l'ambiente locale ha la CLI Docker ma non il daemon,
+  quindi qui è validata la `config` e la logica di build/deploy dei pacchetti.
+- Rate limiting auth: da applicare a livello di reverse proxy Coolify (predisposto).
+- MinIO è opzionale (profilo `storage`); l'integrazione storage applicativa
+  arriva quando servirà (screenshot/export su oggetti).
 
 ## Fase 07 — dettaglio (2026-07-19)
 

@@ -23,6 +23,9 @@ test-results/
 .env.local
 .env.*.local
 
+# backup del database (mai committare dump)
+backups/
+
 # logs
 *.log
 npm-debug.log*

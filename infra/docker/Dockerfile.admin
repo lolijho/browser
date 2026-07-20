@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.7
+# BusinessBox Browser — dashboard admin (Next.js, output standalone).
+# Build multi-stage, utente non-root, lockfile frozen. Contesto: RADICE monorepo.
+
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm" \
+    PATH="/pnpm:$PATH" \
+    CI=true
+RUN corepack enable
+WORKDIR /app
+
+FROM base AS build
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+# Compila i package workspace (^build di turbo) e poi la dashboard.
+RUN pnpm exec turbo run build --filter=@businessbox/admin
+
+# --- Stage runtime: solo l'output `standalone` tracciato da Next ---
+FROM node:22-slim AS runtime
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3001 \
+    HOSTNAME=0.0.0.0
+WORKDIR /app
+# server.js + node_modules tracciati (radice monorepo → include i package workspace).
+COPY --from=build --chown=node:node /app/apps/admin/.next/standalone ./
+# Asset statici generati (non inclusi nello standalone).
+COPY --from=build --chown=node:node /app/apps/admin/.next/static ./apps/admin/.next/static
+USER node
+EXPOSE 3001
+# Lo standalone genera l'entrypoint sotto apps/admin/server.js.
+CMD ["node", "apps/admin/server.js"]

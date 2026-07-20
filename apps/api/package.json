@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "migrate": "node dist/migrate.js",
     "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').mkdirSync('dist/data/pg',{recursive:true});require('node:fs').copyFileSync('src/data/pg/schema.sql','dist/data/pg/schema.sql')\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"

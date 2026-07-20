@@ -1,0 +1,217 @@
+# BusinessBox Browser — Compose sorgente di verità (fase 08).
+#
+# Questo file descrive lo stack server (API, worker, dashboard admin, PostgreSQL
+# con pgvector, Redis). L'app desktop Electron NON gira qui.
+#
+# Regole (vedi docs/COOLIFY_DEPLOY.md):
+#  - nessun `container_name` fisso (Coolify assegna i nomi);
+#  - healthcheck reali su ogni servizio;
+#  - PostgreSQL e Redis solo su rete privata `internal` (mai pubblicati);
+#  - solo `api` e `admin` sono raggiungibili dal proxy (rete `web`);
+#  - segreti richiesti via `${VAR:?messaggio}` (nessun default nel codice);
+#  - log su stdout/stderr, graceful shutdown via `stop_grace_period`.
+#
+# Uso locale:   docker compose --env-file infra/docker/dev.env \
+#                 -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Uso Coolify:  docker-compose.yml + docker-compose.coolify.yml (secret in Coolify)
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    image: ${IMAGE_API:-businessbox/api:latest}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: "3000"
+      # Database e cache sulla rete privata: hostname = nome servizio.
+      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER richiesto}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD richiesto}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB richiesto}
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET richiesto}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-2592000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY richiesto}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # OpenRouter: chiave presente SOLO su api e worker (non su admin/db/redis).
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-z-ai/glm-5.2}
+      OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-BusinessBox Browser}
+      OPENROUTER_REASONING_EFFORT: ${OPENROUTER_REASONING_EFFORT:-high}
+      OPENROUTER_PROVIDER_SORT: ${OPENROUTER_PROVIDER_SORT:-price}
+      OPENROUTER_ALLOW_FALLBACKS: ${OPENROUTER_ALLOW_FALLBACKS:-true}
+      OPENROUTER_REQUIRE_PARAMETERS: ${OPENROUTER_REQUIRE_PARAMETERS:-true}
+      OPENROUTER_DATA_COLLECTION: ${OPENROUTER_DATA_COLLECTION:-deny}
+      OPENROUTER_ZDR: ${OPENROUTER_ZDR:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - web
+      - internal
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    image: ${IMAGE_WORKER:-businessbox/worker:latest}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_URL: redis://redis:6379
+      WORKER_HEALTH_HOST: 127.0.0.1
+      WORKER_HEALTH_PORT: "3002"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-z-ai/glm-5.2}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3002/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - internal
+
+  admin:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.admin
+    image: ${IMAGE_ADMIN:-businessbox/admin:latest}
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3001"
+      HOSTNAME: 0.0.0.0
+      # La dashboard parla con l'API sulla rete privata; la chiave admin resta
+      # server-side (mai nel browser). Nessuna chiave OpenRouter qui.
+      PUBLIC_API_URL: ${INTERNAL_API_URL:-http://api:3000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY richiesto}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - web
+      - internal
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER richiesto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD richiesto}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB richiesto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Solo rete privata: nessuna porta pubblicata.
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    # Solo rete privata: nessuna porta pubblicata.
+    networks:
+      - internal
+
+  # Storage oggetti opzionale (screenshot/export). Attivo solo con il profilo
+  # `storage`:  docker compose --profile storage up
+  minio:
+    image: minio/minio:latest
+    profiles: ["storage"]
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER richiesto}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD richiesto}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+networks:
+  # Rete pubblica: solo api e admin, così il proxy Coolify può raggiungerli.
+  web: {}
+  # Rete privata: PostgreSQL e Redis non sono raggiungibili dall'esterno.
+  internal:
+    internal: true

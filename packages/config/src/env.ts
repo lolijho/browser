@@ -24,6 +24,10 @@ export const workerEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,
   LOG_LEVEL: logLevelSchema,
   REDIS_URL: z.url().optional(),
+  // Porta del piccolo endpoint HTTP di liveness (fase 08): serve solo per
+  // l'healthcheck del container, non espone logica. Non pubblicata all'esterno.
+  WORKER_HEALTH_HOST: z.string().min(1).default("127.0.0.1"),
+  WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
 });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

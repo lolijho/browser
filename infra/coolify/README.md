@@ -1,6 +1,11 @@
 # infra/coolify
 
-Compose e configurazione per il deploy su Coolify (API, worker, admin, PostgreSQL+pgvector, Redis).
+Il deploy su Coolify usa i file Compose nella **radice del repository**
+(`docker-compose.coolify.yml` come sorgente di verità) e le immagini in
+`infra/docker/`.
 
-Popolato nella **fase 08** (`docs/prompts/08_coolify_deploy.md`).
-L'app desktop Electron NON viene eseguita su Coolify.
+Procedura completa e riproducibile: **`docs/COOLIFY_DEPLOY.md`** (12 punti:
+repository, selezione Compose, domini, variabili/secret, volumi, deploy,
+migrazioni, healthcheck, backup, rollback, update, troubleshooting).
+
+L'app desktop Electron **non** viene eseguita su Coolify.
