@@ -40,7 +40,9 @@ jobs:
           retention-days: 14
 
   build:
-    needs: e2e
+    # Indipendente dall'E2E: un eventuale problema del flusso E2E (segnale di
+    # qualità) non deve bloccare la produzione degli installer alpha. L'E2E gira
+    # comunque in parallelo e ne resta visibile l'esito.
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +90,10 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # `always()`: pubblica una release draft con gli installer prodotti anche se
+    # una piattaforma non ancora provata (Windows/Linux) dovesse fallire. La
+    # release è draft/prerelease: revisionabile prima della pubblicazione.
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
