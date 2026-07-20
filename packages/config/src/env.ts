@@ -57,7 +57,12 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
  * browser continua a funzionare senza AI.
  */
 export const aiEnvSchema = z.object({
-  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  // Una stringa vuota (es. `OPENROUTER_API_KEY=` in .env/compose) equivale a
+  // "chiave assente" ⇒ AI disabilitata, non un errore di validazione.
+  OPENROUTER_API_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
   OPENROUTER_BASE_URL: z.url().default("https://openrouter.ai/api/v1"),
   OPENROUTER_MODEL: z.string().min(1).default("z-ai/glm-5.2"),
   OPENROUTER_HTTP_REFERER: z.string().default(""),
