@@ -21,7 +21,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: bundledWorkspacePackages })],
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: bundledWorkspacePackages })],
+    // I preload girano in sandbox: il loro `require` è ristretto e NON può
+    // caricare né chunk relativi né moduli node (es. zod). Vanno quindi emessi
+    // come file UNICI e autonomi. Perciò: bundliamo anche `zod` (niente
+    // `require("zod")`) e disattiviamo il code-splitting (niente `./chunks/*`).
+    plugins: [externalizeDepsPlugin({ exclude: [...bundledWorkspacePackages, "zod"] })],
     build: {
       rollupOptions: {
         input: {
