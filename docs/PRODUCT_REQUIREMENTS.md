@@ -66,8 +66,51 @@ AppImage/deb) con canali alpha/beta/stable.
 - Modalità privata: sessione in memoria, niente cronologia, screenshot, sync o AI di default.
 - Sanitizzazione di credenziali e dati sensibili prima di AI, sync e log.
 
+## Ricerca overview (in aggiunta alla ricerca classica)
+
+Oltre alla ricerca classica (che apre la SERP del motore scelto nel `WebContentsView`),
+il browser deve offrire una **modalità overview**: una sintesi AI con fonti citate,
+mostrata accanto ai risultati e mai al posto della SERP.
+
+- L'overview è **sempre esplicita e opzionale**: la ricerca normale resta il default e
+  non invia nulla all'AI (vincolo confermato in `## Ricerca`).
+- **Nessuno scraping delle SERP**, che resta un non-obiettivo: l'overview non può
+  leggere i risultati di Google/Bing dalla pagina. Le fonti ammesse sono:
+  1. **Memoria locale**: PageCard, snapshot ed estrazioni già presenti — risponde a
+     "cosa so già su questo tema" senza alcuna chiamata esterna. È la modalità
+     disponibile anche in privacy mode "solo locale".
+  2. **API di ricerca licenziata** (es. Brave Search API), con chiave **solo lato
+     backend** come per OpenRouter, quando l'utente richiede risultati dal web.
+  3. **Pagine aperte esplicitamente** dall'utente e selezionate per il confronto.
+- Ogni affermazione dell'overview deve essere **attribuita a una fonte cliccabile**;
+  senza fonti sufficienti l'overview dichiara l'incertezza invece di inventare.
+- L'overview rispetta i flag per pagina (`allowAI`) e le tre privacy mode; in
+  "conferma per invio" richiede consenso prima di ogni chiamata.
+- È un'operazione **a consumo**: rientra nel budget/quota del piano (v. sezione
+  successiva) ed è contabilizzata per utente/org.
+
+## Abbonamenti e monetizzazione
+
+L'accesso alle funzioni AI (chat, overview, classificazione, riassunti) è a consumo e
+richiede un piano attivo. Serve un **sito pubblico di acquisto e gestione abbonamento**,
+distinto dalla dashboard admin interna.
+
+- Nuova app web pubblica (Next.js, coerente con `apps/admin`): pagine piano e prezzi,
+  registrazione, checkout, area cliente (fatture, consumo, upgrade/downgrade, disdetta).
+- **Pagamenti solo tramite provider esterno** (es. Stripe): il prodotto non tratta né
+  memorizza dati di carta; il flusso di pagamento avviene sul provider.
+- Il ciclo di vita dell'abbonamento è guidato dai **webhook** del provider e persistito
+  lato server sull'organizzazione già esistente (`org` + ruoli owner/admin/member).
+- Il desktop non conosce prezzi né segreti di pagamento: riceve dal backend solo il
+  proprio **entitlement** (piano attivo, quote residue) e degrada con grazia quando la
+  quota è esaurita — il browser resta pienamente utilizzabile senza AI.
+- Le quote si agganciano al budget AI già presente (`packages/ai/src/budget.ts`),
+  estendendolo da limite tecnico a limite commerciale per piano.
+- Requisiti legali minimi: termini di servizio, privacy policy, informativa sui
+  subfornitori AI, gestione IVA/fatturazione e diritto di recesso.
+
 ## Non-obiettivi (alpha)
 
-- Nessuno scraping SERP automatico.
+- Nessuno scraping SERP automatico (vale anche per la ricerca overview).
 - Nessun invio email/pagamenti/azioni critiche automatiche da parte dell'AI.
 - Nessun code signing simulato senza certificati reali.

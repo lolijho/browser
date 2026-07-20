@@ -40,6 +40,42 @@ desktop AI-first, barra pulita, sicurezza Electron, privacy.
 - Consolidamento delle metriche di performance su hardware di riferimento.
 - Rate limiting auth applicativo oltre al proxy.
 
+### M6 — Superficie AI oltre la pagina singola (prerequisito)
+
+Collo di bottiglia strutturale: l'unico canale IPC AI è `ai:get-page-context`,
+read-only e **mono-pagina**. Finché resta così, confronto tra pagine, analisi di una
+WorkBox e domande sulla memoria sono irrealizzabili lato desktop, anche se il backend
+accetterebbe fino a 8 fonti (`aiSourceSchema.max(8)`).
+
+- Nuovi canali IPC in allowlist: contesto multi-pagina, contesto WorkBox, query memoria.
+- Collegare i chiamanti mancanti: `provider.classify()` e `generateStructured()` oggi
+  non hanno alcun invocante fuori dai test.
+- Rendere persistenti le conversazioni AI (oggi vivono solo in `useState`).
+- Popolare davvero le colonne già previste: `summary`, `tags`, `entities`, `notes`
+  (nessuna `INSERT` esiste oggi) e i campi FTS corrispondenti.
+
+### M7 — Ricerca overview
+
+Vedi `docs/PRODUCT_REQUIREMENTS.md` → _Ricerca overview_. Vincolo: nessuno scraping SERP.
+
+- Overview da **memoria locale** (funziona offline e in privacy mode "solo locale").
+- Overview da **API di ricerca licenziata** (Brave Search API) con chiave solo backend.
+- Citazioni obbligatorie e dichiarazione di incertezza quando le fonti non bastano.
+- Contabilizzazione a consumo agganciata alle quote di piano (M8).
+- Prerequisiti: M6 (contesto multi-fonte) e, per il retrieval semantico, gli embedding
+  della M2 — oggi la colonna `embedding vector(1536)` esiste ma non è mai popolata.
+
+### M8 — Sito abbonamenti e monetizzazione
+
+Vedi `docs/PRODUCT_REQUIREMENTS.md` → _Abbonamenti e monetizzazione_.
+
+- Nuova app web pubblica (Next.js) con prezzi, checkout e area cliente.
+- Integrazione provider di pagamento esterno + webhook per il ciclo di vita.
+- Entitlement per organizzazione esposto al desktop; degrado con grazia a quota esaurita.
+- Estensione di `packages/ai/src/budget.ts` da limite tecnico a quota commerciale.
+- Prerequisito di sicurezza: le rotte AI sono oggi registrate **senza `requireAuth`**
+  (`apps/api/src/server.ts`) — vanno protette prima di qualunque fatturazione a consumo.
+
 ## Oltre le milestone
 
 - Estensioni/automazioni per flussi imprenditoriali (WorkBox come playbook).
