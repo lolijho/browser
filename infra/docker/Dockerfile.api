@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+# BusinessBox Browser — immagine API (Fastify). Build multi-stage, utente
+# non-root, lockfile frozen. Il contesto di build è la RADICE del monorepo.
+# Non copiare mai `.env` (escluso da .dockerignore).
+
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm" \
+    PATH="/pnpm:$PATH" \
+    CI=true
+RUN corepack enable
+WORKDIR /app
+
+# --- Stage build: installa tutte le dipendenze e compila il monorepo ---
+FROM base AS build
+# Copia solo i manifest prima del sorgente per sfruttare la cache dei layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+# Installazione riproducibile (fallisce se il lockfile non combacia).
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+# Compila l'API e, tramite `^build` di turbo, i package workspace da cui dipende.
+RUN pnpm exec turbo run build --filter=@businessbox/api
+# Estrae un pacchetto autonomo con le sole dipendenze di produzione.
+RUN pnpm --filter=@businessbox/api deploy --prod --legacy /prod/api
+
+# --- Stage runtime: immagine minima, solo dist + node_modules di produzione ---
+FROM node:22-slim AS runtime
+ENV NODE_ENV=production \
+    API_HOST=0.0.0.0 \
+    API_PORT=3000
+WORKDIR /app
+# `node` è un utente non-root già presente nell'immagine ufficiale.
+COPY --from=build --chown=node:node /prod/api ./
+USER node
+EXPOSE 3000
+# Migrazioni: eseguite come step controllato separato (`node dist/migrate.js`),
+# non all'avvio di ogni replica. Vedi docs/COOLIFY_DEPLOY.md.
+CMD ["node", "dist/index.js"]

@@ -1,0 +1,188 @@
+# BusinessBox Browser — Compose per il deploy su Coolify (fase 08).
+#
+# In Coolify seleziona QUESTO file come "Docker Compose Location". Coolify:
+#  - costruisce le immagini dal repository collegato (build context = repo);
+#  - inietta i segreti come variabili d'ambiente (mai nel file/nel repo);
+#  - genera i domini per i servizi con label `SERVICE_FQDN_*` e instrada il
+#    traffico tramite il suo proxy verso `api` e `admin`;
+#  - gestisce nomi container, restart e reti del progetto.
+#
+# PostgreSQL e Redis restano sulla rete privata `internal` (nessuna porta
+# pubblicata). Le migrazioni si eseguono come comando controllato, non all'avvio
+# di ogni replica (vedi docs/COOLIFY_DEPLOY.md).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
+    environment:
+      # Coolify popola questa variabile con il dominio pubblico dell'API.
+      SERVICE_FQDN_API_3000: ${SERVICE_FQDN_API_3000:-/}
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: "3000"
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL richiesto (dominio API in Coolify)}
+      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER richiesto}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD richiesto}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB richiesto}
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET richiesto}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-2592000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY richiesto}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Chiave OpenRouter disponibile solo ad api e worker.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-z-ai/glm-5.2}
+      OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-BusinessBox Browser}
+      OPENROUTER_REASONING_EFFORT: ${OPENROUTER_REASONING_EFFORT:-high}
+      OPENROUTER_PROVIDER_SORT: ${OPENROUTER_PROVIDER_SORT:-price}
+      OPENROUTER_ALLOW_FALLBACKS: ${OPENROUTER_ALLOW_FALLBACKS:-true}
+      OPENROUTER_REQUIRE_PARAMETERS: ${OPENROUTER_REQUIRE_PARAMETERS:-true}
+      OPENROUTER_DATA_COLLECTION: ${OPENROUTER_DATA_COLLECTION:-deny}
+      OPENROUTER_ZDR: ${OPENROUTER_ZDR:-true}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - web
+      - internal
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_URL: redis://redis:6379
+      WORKER_HEALTH_HOST: 127.0.0.1
+      WORKER_HEALTH_PORT: "3002"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-z-ai/glm-5.2}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3002/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - internal
+
+  admin:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.admin
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+    environment:
+      # Coolify popola questa variabile con il dominio pubblico della dashboard.
+      SERVICE_FQDN_ADMIN_3001: ${SERVICE_FQDN_ADMIN_3001:-/}
+      NODE_ENV: production
+      PORT: "3001"
+      HOSTNAME: 0.0.0.0
+      # La dashboard raggiunge l'API sulla rete privata; la chiave admin resta
+      # server-side. Nessuna chiave OpenRouter qui.
+      PUBLIC_API_URL: ${INTERNAL_API_URL:-http://api:3000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY richiesto}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - web
+      - internal
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER richiesto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD richiesto}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB richiesto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  web: {}
+  internal:
+    internal: true

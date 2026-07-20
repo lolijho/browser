@@ -1,0 +1,48 @@
+{
+  "name": "businessbox-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BusinessBox Browser — browser desktop AI-first per imprenditori (monorepo)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:desktop": "turbo run dev --filter=@businessbox/desktop",
+    "dev:api": "turbo run dev --filter=@businessbox/api",
+    "dev:worker": "turbo run dev --filter=@businessbox/worker",
+    "dev:admin": "turbo run dev --filter=@businessbox/admin",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run build --filter=@businessbox/api && playwright test --config e2e/playwright.config.ts",
+    "test:e2e:electron": "turbo run build --filter=@businessbox/desktop && playwright test --config e2e/playwright.electron.config.ts",
+    "build": "turbo run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "eslint": "^10.7.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.0",
+    "turbo": "^2.10.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.64.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "electron",
+      "esbuild",
+      "msgpackr-extract",
+      "sharp",
+      "unrs-resolver"
+    ],
+    "overrides": {
+      "postcss@<8.5.10": ">=8.5.10"
+    }
+  }
+}

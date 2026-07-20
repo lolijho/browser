@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+out/
+.next/
+*.tsbuildinfo
+
+# pacchetti desktop (dmg/zip/appimage/exe)
+apps/desktop/release/
+
+# turbo
+.turbo/
+
+# tests
+coverage/
+playwright-report/
+test-results/
+
+# environment — mai committare segreti
+.env
+.env.local
+.env.*.local
+
+# backup del database (mai committare dump)
+backups/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+# BusinessBox Browser — immagine worker (BullMQ). Build multi-stage, utente
+# non-root, lockfile frozen. Contesto di build: RADICE del monorepo.
+
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm" \
+    PATH="/pnpm:$PATH" \
+    CI=true
+RUN corepack enable
+WORKDIR /app
+
+FROM base AS build
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+RUN pnpm exec turbo run build --filter=@businessbox/worker
+RUN pnpm --filter=@businessbox/worker deploy --prod --legacy /prod/worker
+
+FROM node:22-slim AS runtime
+ENV NODE_ENV=production \
+    WORKER_HEALTH_HOST=127.0.0.1 \
+    WORKER_HEALTH_PORT=3002
+WORKDIR /app
+COPY --from=build --chown=node:node /prod/worker ./
+USER node
+# La porta di healthcheck resta sul loopback del container: non è pubblicata.
+CMD ["node", "dist/index.js"]

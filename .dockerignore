@@ -1,0 +1,30 @@
+# Contesto di build ridotto e sicuro (fase 08).
+# Mai copiare segreti, artefatti locali o dipendenze installate.
+
+**/node_modules
+**/dist
+**/out
+**/.next
+**/.turbo
+.turbo
+test-results
+playwright-report
+e2e/**/screenshots
+
+# Segreti e ambienti locali: NON entrano mai nelle immagini.
+.env
+.env.*
+!.env.example
+
+# Git e metadati
+.git
+.gitignore
+**/*.log
+
+# App desktop: non viene mai eseguita su Coolify.
+apps/desktop/release
+apps/desktop/out
+
+# Documentazione e file non necessari al runtime dei servizi
+*.md
+!README.md

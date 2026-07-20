@@ -1,0 +1,46 @@
+# BusinessBox Browser — override per lo sviluppo locale (fase 08).
+#
+# Usato SOPRA docker-compose.yml per provare lo stack sulla propria macchina:
+#
+#   docker compose --env-file infra/docker/dev.env \
+#     -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Qui, e SOLO qui, pubblichiamo le porte verso l'host (comprese PostgreSQL e
+# Redis) per comodità di debug. In produzione/Coolify questo file NON viene
+# usato: database e cache restano sulla rete privata.
+
+services:
+  api:
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+
+  worker:
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+
+  admin:
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+
+  # In sviluppo esponiamo PostgreSQL e Redis all'host per ispezione manuale
+  # (psql / redis-cli). Aggiungiamo la rete `web` perché quella `internal` non
+  # consente porte pubblicate.
+  postgres:
+    ports:
+      - "5432:5432"
+    networks:
+      - internal
+      - web
+
+  redis:
+    ports:
+      - "6379:6379"
+    networks:
+      - internal
+      - web
