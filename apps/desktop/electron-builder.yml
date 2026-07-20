@@ -15,6 +15,11 @@ files:
   - "!out/**/*.map"
 
 asar: true
+# I preload girano in sandbox: il loro `require` ristretto non riesce a caricare
+# i chunk relativi da DENTRO l'asar. Estraiamo i preload su disco reale (come
+# nell'ambiente E2E, dove funzionano) mantenendo l'asar per il resto dell'app.
+asarUnpack:
+  - "out/preload/**"
 npmRebuild: false
 nodeGypRebuild: false
 
