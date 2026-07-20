@@ -5,7 +5,9 @@ in Electron, barra superiore sempre pulita (1 pagina attiva + max 3 pinned), pag
 organizzate automaticamente in sidebar/WorkBox, motori di ricerca configurabili e AI
 (GLM 5.2 via OpenRouter) con chiave solo lato server.
 
-> Stato: **fase 00 completata** (fondamenta monorepo). Vedi `IMPLEMENTATION_STATUS.md`.
+> Stato: **alpha — fasi 00–10 completate** (fase 05 AI: nucleo). Build server e
+> desktop verdi negli ambienti disponibili; test 160/160. Vedi
+> `IMPLEMENTATION_STATUS.md`, `docs/RELEASE_CHECKLIST.md`, `docs/KNOWN_ISSUES.md`.
 
 ## Struttura
 
@@ -26,6 +28,8 @@ pnpm dev:api      # http://localhost:3000/health
 pnpm dev:desktop  # finestra Electron
 ```
 
+Verifica completa: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
+Stack server in locale: `docker compose --env-file infra/docker/dev.env -f docker-compose.yml -f docker-compose.dev.yml up --build`.
 Tutti i comandi e i dettagli: `docs/DEVELOPMENT.md`.
 
 ## Ordine di esecuzione del progetto
@@ -53,4 +57,10 @@ Le fasi sono definite dai prompt in `docs/prompts/` e vanno eseguite in ordine:
 - `docs/ARCHITECTURE.md` — architettura e confini desktop/Coolify
 - `docs/DATABASE.md` — piano database locale/remoto
 - `docs/DEVELOPMENT.md` — guida allo sviluppo
+- `docs/COOLIFY_DEPLOY.md` — deploy dello stack server su Coolify
+- `docs/DESKTOP_RELEASE.md` — build e release dell'app desktop
+- `docs/SECURITY.md` / `docs/THREAT_MODEL.md` / `docs/PRIVACY_ARCHITECTURE.md` — sicurezza e privacy
+- `docs/RELEASE_CHECKLIST.md` — stato test e criteri di rilascio alpha
+- `docs/KNOWN_ISSUES.md` — limiti noti dell'alpha
+- `docs/ROADMAP.md` — prossime milestone
 - `IMPLEMENTATION_STATUS.md` — stato reale di avanzamento

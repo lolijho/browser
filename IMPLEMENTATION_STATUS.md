@@ -1,6 +1,6 @@
 # IMPLEMENTATION_STATUS
 
-Ultimo aggiornamento: 2026-07-20 — fase 09 completata.
+Ultimo aggiornamento: 2026-07-20 — fase 10 completata (consegna alpha).
 
 ## Stato fasi
 
@@ -16,7 +16,43 @@ Ultimo aggiornamento: 2026-07-20 — fase 09 completata.
 | 07   | Hardening di sicurezza e privacy           | ✅ completata                       |
 | 08   | Docker e deploy su Coolify                 | ✅ completata                       |
 | 09   | Test E2E, build desktop e release          | ✅ completata                       |
-| 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+| 10   | Audit finale e consegna alpha              | ✅ completata                       |
+
+## Fase 10 — dettaglio (2026-07-20): audit finale e consegna alpha
+
+### Audit eseguito
+
+- **Qualità**: `pnpm lint` ✅ · `typecheck` ✅ 17/17 · `test` ✅ **160/160** ·
+  `build` ✅ 11/11. Stack Docker verde in CI (`docker-build`), build macOS verde.
+- **Sicurezza segreti**: nessun segreto tracciato (`.env` non versionato;
+  `dev.env` solo valori fittizi); scan pattern chiavi/PEM/AWS → pulito.
+- **Dipendenze**: 1 vulnerabilità moderata (postcss transitivo via Next)
+  **risolta** con override `postcss >=8.5.10`; `pnpm audit --prod` ora pulito.
+- **Licenze** principali: MIT (Apache-2.0 per `@mozilla/readability`) — permissive.
+- **Codice morto/pseudocodice**: nessun TODO/FIXME reale; i "placeholder" sono
+  input HTML/SQL legittimi; il placeholder worker è documentato.
+- **Mock sul percorso production**: nessuno nascosto — datastore in-memory è
+  fallback dev/alpha esplicito (log all'avvio), in produzione `DATABASE_URL` → pg.
+- **Migrazioni**: locali versionate (`PRAGMA user_version`, applica solo le
+  mancanti, transazionali → empty DB e upgrade coperti); Postgres idempotente
+  (`IF NOT EXISTS` + advisory lock), verificata l'esecuzione da DB vuoto in CI.
+- **Invarianti prodotto** (coperti da test): limite 3 pinned (`pin-rules`),
+  lifecycle hot/warm/cold (`lifecycle-rules`), Google/Brave/custom + OpenSearch
+  (`search`), isolamento workspace/sessioni, privacy, sync offline/online,
+  IPC con verifica mittente, browser usabile senza AI/backend.
+
+### Documenti finali
+
+- Creati: `docs/KNOWN_ISSUES.md`, `docs/ROADMAP.md`.
+- Aggiornati: `README.md` (stato alpha, comandi, indice doc),
+  `IMPLEMENTATION_STATUS.md`, più le doc di fase (SECURITY/COOLIFY/RELEASE già
+  allineate nelle fasi 07–09).
+
+### Note
+
+- Vincoli d'ambiente non risolvibili qui (documentati, non mascherati): binario
+  Electron non scaricabile (E2E/packaging in CI), code signing/notarization
+  assenti (nessun certificato), verifica live OpenRouter/Postgres con credenziali.
 
 ## Fase 09 — dettaglio (2026-07-20)
 
