@@ -1,0 +1,108 @@
+name: desktop-release
+
+# Release desktop alpha (prompt 09): E2E su Linux + build multipiattaforma.
+# Trigger su tag `v*`. Le build sono NON firmate (nessun certificato): l'alpha
+# usa firma ad-hoc su macOS; la firma reale arriva con i certificati.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # Flusso E2E obbligatorio (17 passi) su Electron, con display virtuale.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build desktop bundle
+        run: pnpm exec turbo run build --filter=@businessbox/desktop
+      - name: Run Electron E2E (xvfb)
+        run: xvfb-run --auto-servernum pnpm exec playwright test --config e2e/playwright.electron.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build:
+    needs: e2e
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      # Alpha non firmata: nessuna auto-discovery di certificati.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build workspace packages and desktop bundle
+        run: pnpm exec turbo run build --filter=@businessbox/desktop
+      - name: Package (${{ matrix.platform }})
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder --${{ matrix.platform }} --publish never
+      - name: List artifacts
+        shell: bash
+        run: ls -la apps/desktop/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: businessbox-browser-${{ matrix.platform }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/latest*.yml
+          if-no-files-found: warn
+          retention-days: 30
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+      - name: Create draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: true
+          name: BusinessBox Browser ${{ github.ref_name }} (alpha)
+          body: |
+            Release alpha automatica. Build NON firmate (nessun certificato):
+            su macOS potrebbe servire `xattr -cr` al primo avvio.
+            Vedi docs/DESKTOP_RELEASE.md e docs/RELEASE_CHECKLIST.md.
+          files: dist-artifacts/**/*

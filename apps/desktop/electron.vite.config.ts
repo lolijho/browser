@@ -4,7 +4,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 // I package workspace sono ESM: vengono inclusi nel bundle (non externalizzati)
-// perché main e preload sono emessi in CJS.
+// perché main e preload sono emessi in CJS. Il packaging include solo `out/**`
+// (nessun node_modules), quindi anche electron-updater va bundlato nel main.
 const bundledWorkspacePackages = [
   "@businessbox/ai",
   "@businessbox/shared",
@@ -12,6 +13,7 @@ const bundledWorkspacePackages = [
   "@businessbox/search",
   "@businessbox/database",
   "@mozilla/readability",
+  "electron-updater",
 ];
 
 export default defineConfig({

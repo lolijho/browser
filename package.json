@@ -17,6 +17,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run build --filter=@businessbox/api && playwright test --config e2e/playwright.config.ts",
+    "test:e2e:electron": "turbo run build --filter=@businessbox/desktop && playwright test --config e2e/playwright.electron.config.ts",
     "build": "turbo run build",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

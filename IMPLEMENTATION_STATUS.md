@@ -1,6 +1,6 @@
 # IMPLEMENTATION_STATUS
 
-Ultimo aggiornamento: 2026-07-20 — fase 08 completata.
+Ultimo aggiornamento: 2026-07-20 — fase 09 completata.
 
 ## Stato fasi
 
@@ -15,8 +15,57 @@ Ultimo aggiornamento: 2026-07-20 — fase 08 completata.
 | 06   | Backend, autenticazione e sincronizzazione | ✅ completata                       |
 | 07   | Hardening di sicurezza e privacy           | ✅ completata                       |
 | 08   | Docker e deploy su Coolify                 | ✅ completata                       |
-| 09   | Test E2E, build desktop e release          | ⬜ da iniziare                      |
+| 09   | Test E2E, build desktop e release          | ✅ completata                       |
 | 10   | Audit finale e consegna alpha              | ⬜ da iniziare                      |
+
+## Fase 09 — dettaglio (2026-07-20)
+
+### Fatto
+
+- **Flusso E2E obbligatorio (17 passi)**: `e2e/electron/full-flow.spec.ts`,
+  guidato dal bridge reale `window.businessbox` (esercita il main process:
+  WebContentsView, sessioni separate, ciclo hot/warm/cold, motori, estrazione,
+  screenshot, persistenza). Pagine servite da un server statico locale
+  (offline, deterministico). Config `e2e/playwright.electron.config.ts`, script
+  `pnpm test:e2e:electron`. Gate esplicito (`test.skip` motivato) se il binario
+  Electron non è disponibile.
+- **Harness performance**: `e2e/electron/perf.spec.ts` → `test-results/perf.json`
+  (avvio, memoria 1/4/10/30 PageCard, renderer vivi, restore da cold, ricerca
+  locale). Nessun numero inventato: si salta con motivazione senza Electron.
+- **Copertura test verificata** per tutte le categorie del prompt (unit,
+  integration API/DB, Playwright web/Electron, IPC, lifecycle, motori, OpenRouter
+  mock+contract, sync, isolamento workspace, privacy).
+- **electron-builder**: NSIS (Windows), DMG+ZIP (macOS arm64/x64), AppImage+deb
+  (Linux); `artifactName` con versione/arch; canali alpha/beta/stable; auto-update
+  **predisposto** (`electron-updater` bundlato nel main, inerte in alpha senza feed
+  firmato, **senza disabilitare la verifica firma/integrità**).
+- **CI**: `desktop-release.yml` (matrice Win/mac/Linux, trigger su tag `v*`, job
+  E2E su Linux+xvfb, release GitHub draft/prerelease). `quality.yml` e
+  `docker-build.yml` già dalla fase 08.
+- **Osservabilità**: logger strutturato JSON (`main/observability/logger.ts`),
+  crash report **opt-in** senza upload né dati di navigazione
+  (`crash-reporter.ts`), error boundary della shell (`ErrorBoundary.tsx`),
+  indicatore offline in `StatusBar`, degradazione dell'AIPanel con provider offline.
+- **Documentazione**: `docs/RELEASE_CHECKLIST.md` (stato test, flusso E2E, build,
+  osservabilità, performance, criteri di accettazione, rischi residui).
+
+### Test eseguiti (fase 09)
+
+- `pnpm lint` ✅ — `pnpm typecheck` ✅ 17/17 — `pnpm test` ✅ (160 test) —
+  `pnpm build` ✅ 11/11 — `pnpm test:e2e` (web) ✅ 2/2.
+- Build desktop bundle (`electron-vite build`) ✅ con electron-updater bundlato
+  (nessun require esterno residuo).
+- E2E Electron + perf: caricano e si listano correttamente; **eseguiti in CI**
+  (Linux+xvfb) perché il binario Electron non è scaricabile in questo ambiente
+  (egress `github.com/electron/releases` → 403), come per le build macOS.
+
+### Note
+
+- Vincolo ambiente: senza binario Electron e senza display, il packaging e i
+  test Electron girano in CI. Nessun test critico è saltato in silenzio.
+- Code signing/notarization reali richiedono certificati: l'alpha resta a firma
+  ad-hoc (macOS) / non firmata (Win/Linux); l'auto-update si attiva con build
+  firmate e un feed configurato, senza modifiche al codice.
 
 ## Fase 08 — dettaglio (2026-07-20)
 

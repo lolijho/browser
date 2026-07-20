@@ -13,6 +13,16 @@ import { buildApplicationMenu } from "./menu";
 import { PersistenceService } from "./persistence";
 import { PermissionManager, type PermissionKind } from "./security/permission-manager";
 import { isRiskyDownload, sanitizeFilename, uniqueFilename } from "./security/download-safety";
+import { initCrashReporter } from "./observability/crash-reporter";
+import { logger } from "./observability/logger";
+import { initAutoUpdater } from "./updater";
+
+// Crash report opt-in (prompt 09): disattivo salvo consenso esplicito; deve
+// essere inizializzato il prima possibile, prima di creare processi renderer.
+initCrashReporter({
+  optIn: process.env["BUSINESSBOX_CRASH_REPORTS"] === "1",
+  submitUrl: process.env["BUSINESSBOX_CRASH_SUBMIT_URL"] || undefined,
+});
 
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
@@ -71,7 +81,7 @@ function createWorkspaceSession(partition: string): Session {
     if (isRiskyDownload(safeName)) {
       // Nessuna esecuzione automatica: il file viene solo salvato; la conferma
       // esplicita per le estensioni rischiose è gestita dalla UI di download.
-      console.warn(`[download] estensione rischiosa: ${safeName} (nessuna esecuzione automatica)`);
+      logger.warn("download.risky_extension", { filename: safeName, autoRun: false });
     }
   });
 
@@ -106,9 +116,9 @@ function createMainWindow(): void {
   // --- persistenza locale (fase 04): carica prima di creare il controller ---
   const persistence = new PersistenceService(app.getPath("userData"));
   if (persistence.recoveredFromCorruption) {
-    console.warn(
-      "[db] database locale corrotto: messo in quarantena (.corrupt-*) e ricreato vuoto.",
-    );
+    logger.warn("db.corruption_recovered", {
+      detail: "database locale in quarantena (.corrupt-*) e ricreato vuoto",
+    });
   }
   const store = new TabStore();
   const loaded = persistence.load();
@@ -215,6 +225,9 @@ void app.whenReady().then(() => {
   );
 
   createMainWindow();
+
+  // Auto-update predisposto (inerte in dev/alpha senza feed firmato).
+  initAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

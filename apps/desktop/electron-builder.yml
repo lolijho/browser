@@ -38,6 +38,14 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # La verifica della firma degli update NON viene disabilitata: con un
+  # certificato reale (fase di rilascio firmata) l'update verifica il publisher.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: businessbox-browser-${version}-${arch}-setup.${ext}
 
 linux:
   target:
@@ -48,4 +56,11 @@ linux:
   category: Network
   maintainer: BusinessBox
 
-publish: null
+# Auto-update predisposto (electron-updater). Canale allineato al branding
+# (alpha). Il feed reale si imposta al momento del rilascio; qui il provider è
+# generico e in CI si usa `--publish never`, quindi nessun upload avviene ora.
+# La verifica di firma/integrità resta sempre attiva (vedi src/main/updater.ts).
+publish:
+  - provider: generic
+    url: https://updates.businessbox.example/${channel}
+    channel: alpha
