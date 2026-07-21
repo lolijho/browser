@@ -86,6 +86,7 @@ export async function buildServer(
         dailyTokens: aiEnv.AI_DAILY_TOKEN_LIMIT,
         perRequestTokens: aiEnv.AI_REQUEST_TOKEN_LIMIT,
       }),
+    requireAuth,
   });
   registerAuthRoutes(app, { repos, authService, requireAuth });
   registerSyncRoutes(app, { repos, requireAuth });

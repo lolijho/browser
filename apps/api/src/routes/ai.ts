@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
   aiChatApiRequestSchema,
   aiHealthResponseSchema,
@@ -15,21 +15,29 @@ import {
 export interface AiRouteDeps {
   provider: AIProvider;
   budget: AiBudgetTracker;
+  requireAuth: preHandlerHookHandler;
 }
 
 /**
  * Rotte AI (prompt 05): il backend riceve lo stream da OpenRouter e lo
  * ritrasmette al desktop via SSE. La chiave API non lascia mai il server.
  * Telemetria senza contenuti: modello, provider, token, costo, latenza, TTFT.
+ *
+ * Autenticazione: ogni rotta che consuma token OpenRouter (usage/summarize/chat)
+ * richiede un access token valido. Senza guard l'endpoint sarebbe un proxy LLM
+ * aperto a spese dell'operatore, e non sarebbe possibile attribuire il consumo
+ * a un'organizzazione (prerequisito della fatturazione a consumo).
+ * `/ai/health` resta pubblica: è un segnale di liveness, non costa nulla e non
+ * espone dati — serve al desktop per sapere se mostrare l'AI prima del login.
  */
 export function registerAiRoutes(app: FastifyInstance, deps: AiRouteDeps): void {
   app.get("/api/v1/ai/health", async () =>
     aiHealthResponseSchema.parse(await deps.provider.healthCheck()),
   );
 
-  app.get("/api/v1/ai/usage", async () => deps.budget.getUsage());
+  app.get("/api/v1/ai/usage", { preHandler: deps.requireAuth }, async () => deps.budget.getUsage());
 
-  app.post("/api/v1/ai/summarize", async (request, reply) => {
+  app.post("/api/v1/ai/summarize", { preHandler: deps.requireAuth }, async (request, reply) => {
     const parsed = aiSummarizeApiRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request" });
@@ -51,7 +59,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: AiRouteDeps): void 
     }
   });
 
-  app.post("/api/v1/ai/chat", async (request, reply) => {
+  app.post("/api/v1/ai/chat", { preHandler: deps.requireAuth }, async (request, reply) => {
     const parsed = aiChatApiRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request" });

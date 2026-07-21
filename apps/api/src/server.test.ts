@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import {
+  authSessionSchema,
   healthResponseSchema,
   livenessResponseSchema,
   readinessResponseSchema,
@@ -50,7 +51,46 @@ describe("API health endpoints", () => {
   });
 });
 
+/**
+ * Le rotte AI consumano token a spese dell'operatore: sono dietro `requireAuth`.
+ * Ogni test registra un utente reale e usa il suo access token.
+ */
+async function authHeaders(app: FastifyInstance): Promise<Record<string, string>> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/register",
+    payload: {
+      email: `ai-${crypto.randomUUID()}@example.com`,
+      password: "password-di-test-1234",
+    },
+  });
+  const session = authSessionSchema.parse(response.json());
+  return { authorization: `Bearer ${session.tokens.accessToken}` };
+}
+
 describe("API AI (fase 05)", () => {
+  it("le rotte AI a consumo rifiutano le richieste non autenticate", async () => {
+    const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV, {
+      aiProvider: new MockAIProvider({ chatText: "non deve arrivare qui" }),
+    });
+    const chat = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai/chat",
+      payload: { messages: [{ role: "user", content: "ciao" }], sources: [] },
+    });
+    expect(chat.statusCode).toBe(401);
+    const summarize = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai/summarize",
+      payload: { source: { id: "p1", title: "T", url: "https://x.example", text: "t" } },
+    });
+    expect(summarize.statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: "/api/v1/ai/usage" })).statusCode).toBe(401);
+    // /ai/health resta pubblica: è liveness, non consuma nulla.
+    expect((await app.inject({ method: "GET", url: "/api/v1/ai/health" })).statusCode).toBe(200);
+    await app.close();
+  });
+
   it("senza chiave OpenRouter l'AI risulta disabled e il server resta sano", async () => {
     const app = await buildServer(TEST_ENV, TEST_AI_ENV, TEST_SERVER_ENV);
     const health = await app.inject({ method: "GET", url: "/api/v1/ai/health" });
@@ -58,6 +98,7 @@ describe("API AI (fase 05)", () => {
     const chat = await app.inject({
       method: "POST",
       url: "/api/v1/ai/chat",
+      headers: await authHeaders(app),
       payload: { messages: [{ role: "user", content: "ciao" }], sources: [] },
     });
     expect(chat.body).toContain('"type":"error"');
@@ -75,6 +116,7 @@ describe("API AI (fase 05)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/chat",
+      headers: await authHeaders(app),
       payload: {
         messages: [{ role: "user", content: "riassumi" }],
         sources: [{ id: "p1", title: "Pagina", url: "https://x.example", text: "contenuto" }],
@@ -95,6 +137,7 @@ describe("API AI (fase 05)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/chat",
+      headers: await authHeaders(app),
       payload: { messages: [] },
     });
     expect(response.statusCode).toBe(400);
@@ -109,6 +152,7 @@ describe("API AI (fase 05)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/chat",
+      headers: await authHeaders(app),
       payload: { messages: [{ role: "user", content: "testo lungo oltre il budget" }] },
     });
     expect(response.statusCode).toBe(429);
@@ -125,6 +169,7 @@ describe("API AI (fase 05)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/summarize",
+      headers: await authHeaders(app),
       payload: { source: { id: "p9", title: "Doc", url: "https://d.example", text: "testo" } },
     });
     expect(response.statusCode).toBe(200);
@@ -143,6 +188,7 @@ describe("API AI (fase 05)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/ai/summarize",
+      headers: await authHeaders(app),
       payload: { source: { id: "p1", title: "T", url: "https://x.example", text: "t" } },
     });
     expect(response.statusCode).toBe(503);
