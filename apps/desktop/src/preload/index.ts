@@ -3,7 +3,12 @@ import {
   IPC_CHANNELS,
   IPC_EVENTS,
   type AddCustomEngineRequest,
+  type AiChatStartRequest,
+  type AiChatStartResponse,
+  type AiContextResponse,
   type AiPageContextResponse,
+  type AuthResult,
+  type AuthStatus,
   type AppInfo,
   type BrowserState,
   type ContentBounds,
@@ -171,6 +176,43 @@ const bridge = {
 
   setContentBounds: (bounds: ContentBounds): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.layoutSetContentBounds, bounds) as Promise<void>,
+
+  // --- Contesto AI multi-fonte (M6) ---
+
+  aiGetContext: (pageIds: string[]): Promise<AiContextResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.aiGetContext, { pageIds }) as Promise<AiContextResponse>,
+
+  aiGetWorkBoxContext: (workBoxId: string): Promise<AiContextResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.aiGetWorkBoxContext, {
+      workBoxId,
+    }) as Promise<AiContextResponse>,
+
+  /** Avvia una chat AI: il token resta nel main, qui tornano solo i chunk. */
+  aiChatStart: (request: AiChatStartRequest): Promise<AiChatStartResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.aiChatStart, request) as Promise<AiChatStartResponse>,
+
+  aiChatCancel: (runId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.aiChatCancel, { runId }) as Promise<void>,
+
+  onAiChatChunk: (callback: (payload: unknown) => void): (() => void) =>
+    subscribe(IPC_EVENTS.aiChatChunk, callback),
+
+  // --- Autenticazione (nessun token attraversa questo bridge) ---
+
+  authGetStatus: (): Promise<AuthStatus> =>
+    ipcRenderer.invoke(IPC_CHANNELS.authGetStatus, {}) as Promise<AuthStatus>,
+
+  authLogin: (email: string, password: string): Promise<AuthResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.authLogin, { email, password }) as Promise<AuthResult>,
+
+  authRegister: (email: string, password: string): Promise<AuthResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.authRegister, { email, password }) as Promise<AuthResult>,
+
+  authLogout: (): Promise<AuthStatus> =>
+    ipcRenderer.invoke(IPC_CHANNELS.authLogout, {}) as Promise<AuthStatus>,
+
+  onAuthState: (callback: (payload: unknown) => void): (() => void) =>
+    subscribe(IPC_EVENTS.authState, callback),
 
   onBrowserState: (callback: (payload: unknown) => void): (() => void) =>
     subscribe(IPC_EVENTS.browserState, callback),

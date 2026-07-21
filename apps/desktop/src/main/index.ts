@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { BrowserWindow, Menu, app, ipcMain, session, type Session } from "electron";
+import { BrowserWindow, Menu, app, ipcMain, safeStorage, session, type Session } from "electron";
 import { IPC_CHANNELS, IPC_EVENTS, type UiCommand } from "@businessbox/contracts";
 import { WORKSPACE_SESSION_PREFIX, BRANDING } from "@businessbox/shared";
 import { ConfigurableSearchEngineManager } from "@businessbox/search";
@@ -9,6 +9,10 @@ import { BrowserController } from "./browser/browser-controller";
 import { TabStore } from "./browser/tab-store";
 import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
 import { registerBrowserIpc } from "./ipc";
+import { AuthTokenStore } from "./auth/token-store";
+import { AuthManager } from "./auth/auth-manager";
+import { AiClient } from "./ai/ai-client";
+import { apiBaseUrlFromEnvironment, isInsecureRemoteUrl } from "./config/api-url";
 import { buildApplicationMenu } from "./menu";
 import { PersistenceService } from "./persistence";
 import { PermissionManager, type PermissionKind } from "./security/permission-manager";
@@ -156,7 +160,33 @@ function createMainWindow(): void {
     onScreenshotDeleted: (pageId) => persistence.deleteScreenshot(pageId),
   });
 
-  registerBrowserIpc(controller, searchManager, persistence, shell);
+  // Autenticazione: i token vivono qui (refresh cifrato con safeStorage, access
+  // solo in memoria) e non attraversano mai il bridge verso il renderer.
+  const apiBaseUrl = apiBaseUrlFromEnvironment();
+  if (isInsecureRemoteUrl(apiBaseUrl)) {
+    // Ci viaggiano access token: in chiaro verso un host remoto è un errore di
+    // configurazione, non una preferenza.
+    logger.warn("api.insecure_url", { apiBaseUrl });
+  }
+  logger.info("api.base_url", { apiBaseUrl });
+  const authManager = new AuthManager({
+    store: new AuthTokenStore(safeStorage, join(app.getPath("userData"), "auth.bin")),
+    apiBaseUrl,
+    deviceName: `${BRANDING.productName} (${process.platform})`,
+  });
+  const aiClient = new AiClient({
+    apiBaseUrl,
+    getAccessToken: () => authManager.getAccessToken(),
+  });
+  // Ripristino sessione non bloccante: il browser resta usabile anche offline.
+  void authManager.restore().catch((error: unknown) => {
+    logger.warn("auth.restore_failed", { detail: String(error) });
+  });
+
+  registerBrowserIpc(controller, searchManager, persistence, shell, {
+    auth: authManager,
+    ai: aiClient,
+  });
 
   app.on("will-quit", () => {
     controller.dispose();

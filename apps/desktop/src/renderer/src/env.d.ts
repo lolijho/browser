@@ -1,7 +1,12 @@
 import type {
   AddCustomEngineRequest,
+  AiChatStartRequest,
+  AiChatStartResponse,
+  AiContextResponse,
   AiPageContextResponse,
   AppInfo,
+  AuthResult,
+  AuthStatus,
   BrowserState,
   ContentBounds,
   CreatePageRequest,
@@ -58,6 +63,16 @@ declare global {
       deleteScreenshot(pageId: string): Promise<void>;
       setAllowAi(pageId: string, allow: boolean): Promise<void>;
       aiGetPageContext(pageId: string): Promise<AiPageContextResponse>;
+      aiGetContext(pageIds: string[]): Promise<AiContextResponse>;
+      aiGetWorkBoxContext(workBoxId: string): Promise<AiContextResponse>;
+      aiChatStart(request: AiChatStartRequest): Promise<AiChatStartResponse>;
+      aiChatCancel(runId: string): Promise<void>;
+      onAiChatChunk(callback: (payload: unknown) => void): () => void;
+      authGetStatus(): Promise<AuthStatus>;
+      authLogin(email: string, password: string): Promise<AuthResult>;
+      authRegister(email: string, password: string): Promise<AuthResult>;
+      authLogout(): Promise<AuthStatus>;
+      onAuthState(callback: (payload: unknown) => void): () => void;
       onOpenSearchProposal(callback: (payload: unknown) => void): () => void;
       openDevTools(pageId: string): Promise<void>;
       setContentBounds(bounds: ContentBounds): Promise<void>;
