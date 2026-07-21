@@ -4,6 +4,37 @@ Stato: packaging **alpha non firmato** configurato (electron-builder). La pipeli
 release completa (matrice Windows/macOS/Linux su tag `v*`, canali, auto-update) arriva
 nella fase 09.
 
+## Puntare l'app all'API deployata (obbligatorio per le build distribuite)
+
+Il default del branding è `http://localhost:3000`. Una build fatta senza indicare
+l'URL dell'API cercherà quindi il backend **sulla macchina dell'utente**: login e
+AI non funzioneranno mai contro un'API realmente deployata (es. su Coolify).
+
+Imposta `BUSINESSBOX_API_URL` **al momento della build**: il valore viene compilato
+nel bundle del processo principale.
+
+```bash
+BUSINESSBOX_API_URL=https://api.tuodominio.it pnpm build:mac
+```
+
+Deve coincidere con il `PUBLIC_API_URL` configurato in Coolify (vedi
+`docs/COOLIFY_DEPLOY.md`). Regole applicate dal codice
+(`apps/desktop/src/main/config/api-url.ts`):
+
+- precedenza: variabile a runtime `BUSINESSBOX_API_URL` → valore compilato → branding;
+- sono accettati solo `http`/`https`; un valore non valido viene **ignorato** (l'app
+  non deve fallire l'avvio per una configurazione sbagliata);
+- la barra finale viene rimossa, un prefisso di percorso viene conservato;
+- `http://` verso un host non locale produce un warning `api.insecure_url`: su quel
+  canale viaggiano access token, quindi in produzione usa sempre HTTPS.
+
+All'avvio il log `api.base_url` indica l'URL effettivamente in uso: è il primo posto
+da guardare se il login non funziona.
+
+> Nota CORS: le chiamate autenticate partono dal **processo principale**, non dal
+> renderer, quindi non sono soggette a CORS. `CORS_ALLOWED_ORIGINS` serve al sito e
+> alla dashboard admin, non all'app desktop.
+
 ## Versione macOS eseguibile
 
 ### Opzione A — GitHub Actions (nessun Mac richiesto per il build)

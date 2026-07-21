@@ -7,14 +7,14 @@ binario (vedi `docs/DESKTOP_RELEASE.md`).
 
 Il **Compose è la fonte di verità**. I file rilevanti:
 
-| File                          | Uso                                                        |
-| ----------------------------- | ---------------------------------------------------------- |
-| `docker-compose.yml`          | base: servizi, healthcheck, reti, volumi                   |
-| `docker-compose.dev.yml`      | override locale (pubblica le porte, valori di sviluppo)    |
-| `docker-compose.coolify.yml`  | file da selezionare in Coolify (domini + segreti iniettati) |
-| `infra/docker/Dockerfile.*`   | immagini multi-stage non-root per api/worker/admin          |
-| `infra/docker/dev.env`        | variabili fittizie per lo sviluppo locale (non segreti)     |
-| `infra/scripts/*.sh`          | migrazioni, backup, restore                                 |
+| File                         | Uso                                                         |
+| ---------------------------- | ----------------------------------------------------------- |
+| `docker-compose.yml`         | base: servizi, healthcheck, reti, volumi                    |
+| `docker-compose.dev.yml`     | override locale (pubblica le porte, valori di sviluppo)     |
+| `docker-compose.coolify.yml` | file da selezionare in Coolify (domini + segreti iniettati) |
+| `infra/docker/Dockerfile.*`  | immagini multi-stage non-root per api/worker/admin          |
+| `infra/docker/dev.env`       | variabili fittizie per lo sviluppo locale (non segreti)     |
+| `infra/scripts/*.sh`         | migrazioni, backup, restore                                 |
 
 ## 1. Collegamento repository
 
@@ -111,6 +111,26 @@ Non memorizzare stato applicativo nei container: solo in questi volumi o nel DB.
 3. L'ordine è garantito dai `depends_on` con `condition: service_healthy`:
    `postgres`/`redis` sani → `api` sano → `admin`.
 
+### 6.1 Ricompilare l'app desktop dopo il deploy
+
+Il deploy dello stack **non basta** perché gli utenti possano usare account e AI:
+l'URL dell'API è compilato dentro l'app desktop e per default vale
+`http://localhost:3000`.
+
+Dopo aver assegnato il dominio all'API, ricompila il desktop con lo stesso valore
+di `PUBLIC_API_URL`:
+
+```bash
+BUSINESSBOX_API_URL=https://api.tuodominio.it pnpm build:mac
+```
+
+Dettagli e regole di validazione: `docs/DESKTOP_RELEASE.md`. All'avvio l'app logga
+`api.base_url` con l'URL effettivo: è il primo controllo se il login non funziona.
+
+> Le rotte AI (`/api/v1/ai/chat`, `/summarize`, `/usage`) richiedono un access
+> token: una volta pubblicata l'API, senza autenticazione risponderebbero 401.
+> `/api/v1/ai/health` resta pubblica come segnale di liveness.
+
 ## 7. Migrazioni
 
 Le migrazioni sono un **comando idempotente separato**, non eseguito all'avvio
@@ -135,13 +155,13 @@ nuovo verso schemi modificati.
 
 Ogni servizio espone un healthcheck reale (nessun `sleep`, nessun finto `ok`):
 
-| Servizio | Check                                             |
-| -------- | ------------------------------------------------- |
-| api      | `GET http://127.0.0.1:3000/health/live`           |
-| worker   | `GET http://127.0.0.1:3002/health/ready` (Redis)  |
-| admin    | `GET http://127.0.0.1:3001/api/health`            |
-| postgres | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB`     |
-| redis    | `redis-cli ping`                                  |
+| Servizio | Check                                            |
+| -------- | ------------------------------------------------ |
+| api      | `GET http://127.0.0.1:3000/health/live`          |
+| worker   | `GET http://127.0.0.1:3002/health/ready` (Redis) |
+| admin    | `GET http://127.0.0.1:3001/api/health`           |
+| postgres | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB`   |
+| redis    | `redis-cli ping`                                 |
 
 Coolify mostra lo stato `healthy/unhealthy` e non instrada verso container non
 sani. Verifica rapida dei domini pubblici:
@@ -203,16 +223,16 @@ curl -fsS https://admin.tuodominio.it/api/health
 
 ## 12. Troubleshooting
 
-| Sintomo                                   | Causa probabile / Rimedio                                                      |
-| ----------------------------------------- | ------------------------------------------------------------------------------ |
-| Deploy fallisce con "variable ... missing" | Manca una variabile `${VAR:?}`. Impostala nei secret Coolify (§4).             |
-| `api` resta `unhealthy`                    | DB/Redis non raggiungibili o `DATABASE_URL` errata. Controlla i log di `api`.  |
-| `admin` non mostra dati                    | `ADMIN_API_KEY` diversa tra `api` e `admin`, o `PUBLIC_API_URL` errata.        |
-| `worker` `unhealthy`                       | `REDIS_URL` non valida o Redis non pronto. Verifica il servizio `redis`.       |
-| Migrazione bloccata                        | Advisory lock trattenuto da un run precedente interrotto: riprova, è idempotente. |
-| Nessun HTTPS                               | Dominio non assegnato in Coolify o DNS non propagato verso il server.          |
+| Sintomo                                    | Causa probabile / Rimedio                                                          |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Deploy fallisce con "variable ... missing" | Manca una variabile `${VAR:?}`. Impostala nei secret Coolify (§4).                 |
+| `api` resta `unhealthy`                    | DB/Redis non raggiungibili o `DATABASE_URL` errata. Controlla i log di `api`.      |
+| `admin` non mostra dati                    | `ADMIN_API_KEY` diversa tra `api` e `admin`, o `PUBLIC_API_URL` errata.            |
+| `worker` `unhealthy`                       | `REDIS_URL` non valida o Redis non pronto. Verifica il servizio `redis`.           |
+| Migrazione bloccata                        | Advisory lock trattenuto da un run precedente interrotto: riprova, è idempotente.  |
+| Nessun HTTPS                               | Dominio non assegnato in Coolify o DNS non propagato verso il server.              |
 | Postgres non raggiungibile "da fuori"      | È voluto: è solo sulla rete `internal`. Usa lo `docker-compose.dev.yml` in locale. |
-| Log assenti                                | I servizi loggano su stdout/stderr; usa i log di Coolify o `docker compose logs`. |
+| Log assenti                                | I servizi loggano su stdout/stderr; usa i log di Coolify o `docker compose logs`.  |
 
 ### Prova locale completa
 

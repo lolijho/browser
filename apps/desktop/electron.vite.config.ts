@@ -74,6 +74,12 @@ function inlinePreloadChunks(): Plugin {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: bundledWorkspacePackages })],
+    define: {
+      // URL dell'API compilato nel bundle di release. Senza questo, un'app
+      // impacchettata userebbe il default del branding (localhost) e non
+      // raggiungerebbe mai un backend deployato. Vedi docs/DESKTOP_RELEASE.md.
+      __BUSINESSBOX_API_URL__: JSON.stringify(process.env["BUSINESSBOX_API_URL"] ?? ""),
+    },
   },
   preload: {
     // Bundliamo anche `zod` (niente `require("zod")`) e inliniamo i chunk
