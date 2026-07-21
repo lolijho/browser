@@ -10,9 +10,15 @@ scelte deliberate e lavoro futuro. Aggiornato: 2026-07-20.
    **packaging desktop e i test E2E Electron girano in CI** (Linux + `xvfb`),
    non nella sandbox di sviluppo. La logica è comunque coperta da unit test e i
    test E2E si saltano con motivazione esplicita quando il binario manca.
-2. **Code signing / notarization assenti**: nessun certificato disponibile.
-   L'alpha usa firma **ad-hoc** su macOS (serve `xattr -cr` al primo avvio) ed è
-   non firmata su Windows/Linux. Non è simulata alcuna firma reale.
+2. **Code signing / notarization assenti**: nessun certificato _Developer ID_
+   disponibile. L'alpha usa firma **ad-hoc** su macOS (serve `xattr -cr` o
+   click-destro → Apri al primo avvio) ed è non firmata su Windows/Linux. Non è
+   simulata alcuna firma reale. La pipeline è però già predisposta: con i
+   certificati, `hardenedRuntime`, entitlements e notarization si attivano senza
+   modifiche al codice (vedi `docs/DESKTOP_RELEASE.md`).
+   Nota: un certificato _Apple Development_ non è sufficiente e viene
+   deliberatamente **ignorato** dalla build — firmarci un pacchetto produrrebbe
+   un'app che sembra firmata ma che Gatekeeper rifiuta sulle macchine altrui.
 3. **Verifica live con servizi esterni**: chiamate reali a OpenRouter e a un
    Postgres/Redis vivi richiedono credenziali/infra. In CI è verificato l'avvio
    dello stack Docker con healthcheck; le chiamate AI reali sono coperte da test
@@ -72,8 +78,12 @@ scelte deliberate e lavoro futuro. Aggiornato: 2026-07-20.
 
 - **App macOS non avviabile** — firma ad-hoc incompleta (mancava
   `_CodeSignature/CodeResources`) + quarantena da download: macOS segnalava
-  "danneggiata". Mitigazione utente: `xattr -cr` + `codesign --force --deep -s -`.
-  Soluzione definitiva: firma Developer ID + notarization (M1).
+  "danneggiata", blocco che nemmeno click-destro → Apri supera.
+  Causa individuata alla radice: con `CSC_IDENTITY_AUTO_DISCOVERY=false`
+  electron-builder produce un sigillo incompleto. Risolto con l'hook `afterSign`
+  in `apps/desktop/electron-builder.cjs`, che ri-firma il bundle e **verifica**
+  l'esito facendo fallire la build se il sigillo non è valido.
+  Resta necessario `xattr -cr` finché non c'è la notarization (M1).
 - **`window.businessbox` undefined** — i preload girano in sandbox e non possono
   `require()` chunk relativi, ma Rollup estraeva un chunk condiviso tra le due entry
   (`index` + `page`): il preload andava in eccezione prima di `exposeInMainWorld`.

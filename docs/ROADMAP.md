@@ -7,7 +7,20 @@ desktop AI-first, barra pulita, sicurezza Electron, privacy.
 
 ### M1 — Firma e distribuzione reali
 
-- Certificati Apple (Developer ID) + notarization macOS.
+Pipeline già predisposta (`apps/desktop/electron-builder.cjs`, entitlements in
+`apps/desktop/build/`, workflow `desktop-mac-build.yml`): si attiva da sola quando i
+certificati esistono. Resta da fare solo la parte non automatizzabile — vedi
+`docs/DESKTOP_RELEASE.md`.
+
+- [ ] Iscrizione all'Apple Developer Program (99 USD/anno): senza, esiste solo il
+      certificato _Apple Development_, valido per il test locale ma **non** per la
+      distribuzione.
+- [ ] Creare il certificato **Developer ID Application** ed esportarlo in `.p12`.
+- [ ] Caricare i GitHub Secrets (`MAC_CERTIFICATE_P12`, `MAC_CERTIFICATE_PASSWORD`,
+      `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`).
+- [x] Hardened runtime + entitlements + notarization condizionali alla presenza dei
+      certificati, con avviso esplicito quando la firma non è reale.
+- [x] Firma ad-hoc riparata e verificata in build (l'alpha non è più "danneggiata").
 - Certificato Authenticode Windows.
 - Feed di update firmato (canali alpha/beta/stable già predisposti).
 - Attivazione effettiva di `electron-updater` con verifica firma end-to-end.
