@@ -42,6 +42,15 @@ magiche nel Compose:
 Assegna in Coolify un dominio a ciascun servizio (es. `api.tuodominio.it` e
 `admin.tuodominio.it`). Coolify gestisce automaticamente HTTPS/Let's Encrypt.
 
+`worker`, `postgres`, `redis` (e `minio`, se attivato) **non** ricevono domini:
+lascia vuoti i loro campi in Coolify e non premere "Generate Domain".
+
+> **La dashboard admin espone dati di tutti i tenant.** È protetta da HTTP Basic
+> Auth (`proxy.ts` dell'app Next), fail-closed: senza `ADMIN_DASHBOARD_PASSWORD`
+> risponde 503 a ogni pagina (solo `/api/health` resta pubblico per
+> l'healthcheck). Imposta la password fra i secret (§4). In alternativa, per non
+> esporla affatto, lascia vuoto il dominio di `admin`.
+
 PostgreSQL e Redis **non** ricevono domini: restano sulla rete `internal`.
 
 ## 4. Variabili e secret
@@ -57,6 +66,7 @@ POSTGRES_PASSWORD=<segreto robusto>
 POSTGRES_DB=businessbox
 JWT_ACCESS_SECRET=<segreto >= 16 caratteri>
 ADMIN_API_KEY=<segreto >= 16 caratteri>
+ADMIN_DASHBOARD_PASSWORD=<password della dashboard admin>
 PUBLIC_API_URL=https://api.tuodominio.it
 
 # AI (solo se si abilita l'AI; disponibile solo ad api e worker)

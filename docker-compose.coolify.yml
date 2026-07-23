@@ -122,6 +122,11 @@ services:
       # server-side. Nessuna chiave OpenRouter qui.
       PUBLIC_API_URL: ${INTERNAL_API_URL:-http://api:3000}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY richiesto}
+      # Login della dashboard (Basic Auth). Obbligatorio: senza, il gate è
+      # fail-closed e la dashboard risponde 503. La UI espone dati di tutti i
+      # tenant, quindi non può stare online senza credenziali.
+      ADMIN_DASHBOARD_USER: ${ADMIN_DASHBOARD_USER:-admin}
+      ADMIN_DASHBOARD_PASSWORD: ${ADMIN_DASHBOARD_PASSWORD:?ADMIN_DASHBOARD_PASSWORD richiesto (password della dashboard admin)}
     depends_on:
       api:
         condition: service_healthy
