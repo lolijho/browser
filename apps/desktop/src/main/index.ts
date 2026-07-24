@@ -31,6 +31,9 @@ initCrashReporter({
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
 
+/** `true` solo durante un'uscita reale dall'app: vedi `before-quit`/`close`. */
+let isQuitting = false;
+
 /** Permessi browser (fase 07): deny-by-default, decisi per dominio+workspace. */
 const permissionManager = new PermissionManager();
 
@@ -223,6 +226,19 @@ function createMainWindow(): void {
   );
 
   controller.start();
+
+  // Chiusura finestra su macOS: la nascondiamo invece di distruggerla, e la
+  // ri-mostriamo su `activate` (clic sul Dock). Ricreare la finestra
+  // chiamerebbe di nuovo `createMainWindow()`, che ri-registra gli handler IPC:
+  // `ipcMain.handle` lancia un'eccezione sul canale già presente e la finestra
+  // non si aprirebbe (bisognava uscire e riavviare). Tenere viva la finestra è
+  // anche coerente col modello a pagine persistenti/sospese del browser.
+  window.on("close", (event) => {
+    if (!isQuitting && process.platform === "darwin") {
+      event.preventDefault();
+      window.hide();
+    }
+  });
   window.on("closed", () => controller.dispose());
 
   window.once("ready-to-show", () => {
@@ -260,10 +276,22 @@ void app.whenReady().then(() => {
   initAutoUpdater();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // Clic sul Dock: mostra la finestra esistente (nascosta alla chiusura) o,
+    // se non c'è più, ne crea una nuova.
+    const [existing] = BrowserWindow.getAllWindows();
+    if (existing) {
+      existing.show();
+      existing.focus();
+    } else {
       createMainWindow();
     }
   });
+});
+
+// Distingue la chiusura della finestra (nascondi) dall'uscita reale dall'app
+// (Cmd+Q / menu Esci): solo dopo questo evento la finestra viene distrutta.
+app.on("before-quit", () => {
+  isQuitting = true;
 });
 
 app.on("window-all-closed", () => {
