@@ -255,7 +255,23 @@ function createMainWindow(): void {
   }
 }
 
+/**
+ * User-Agent "pulito" da presentare ai siti: lo User-Agent di default di
+ * Electron contiene i token `Electron/x.y.z` e `<nome-app>/x.y.z`, che i sistemi
+ * anti-bot (es. Google) leggono come traffico automatico → CAPTCHA/blocchi.
+ * Rimuoviamo quei due token lasciando un normale UA di Chrome, conservando la
+ * versione reale di Chromium e il token di piattaforma corretto.
+ */
+function browserUserAgent(): string {
+  return app.userAgentFallback
+    .replace(/ Electron\/[0-9.]+/i, "")
+    .replace(/ \S+\/\S+ (Chrome\/)/, " $1");
+}
+
 void app.whenReady().then(() => {
+  // Presenta le pagine come Chrome standard (vedi browserUserAgent).
+  app.userAgentFallback = browserUserAgent();
+
   // Deny-by-default anche per la sessione della shell.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(false);
