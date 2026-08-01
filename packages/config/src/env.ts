@@ -48,6 +48,13 @@ export const serverEnvSchema = z.object({
     .default(60 * 60 * 24 * 30),
   ADMIN_API_KEY: z.string().min(16).optional(),
   CORS_ALLOWED_ORIGINS: z.string().default(""),
+  // Brave Search API (prospecting): assente ⇒ ricerca disabilitata, il resto
+  // dell'API continua a funzionare. Stringa vuota = assente, non errore.
+  BRAVE_SEARCH_API_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  BRAVE_SEARCH_COUNTRY: z.string().default("it"),
 });
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 

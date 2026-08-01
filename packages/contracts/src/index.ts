@@ -227,3 +227,17 @@ export {
   type PageDirtyEvent,
   type PageScrollEvent,
 } from "./browser.js";
+export {
+  prospectSearchRequestSchema,
+  searchHitSchema,
+  websiteIssueSchema,
+  websiteAnalysisSchema,
+  leadSchema,
+  prospectSearchResponseSchema,
+  type ProspectSearchRequest,
+  type SearchHit,
+  type WebsiteIssue,
+  type WebsiteAnalysis,
+  type Lead,
+  type ProspectSearchResponse,
+} from "./prospecting.js";

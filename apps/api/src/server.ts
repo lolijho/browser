@@ -8,8 +8,14 @@ import {
   OpenRouterGLMProvider,
   type AIProvider,
 } from "@businessbox/ai";
+import {
+  BraveSearchProvider,
+  DisabledSearchProvider,
+  type SearchProvider,
+} from "@businessbox/prospecting";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { registerProspectingRoutes } from "./routes/prospecting.js";
 import { createMemoryRepositories } from "./data/memory.js";
 import type { Repositories } from "./data/types.js";
 import { AuthService } from "./modules/auth/service.js";
@@ -21,8 +27,23 @@ import { registerAdminRoutes } from "./modules/admin/routes.js";
 export interface BuildServerOptions {
   aiProvider?: AIProvider;
   aiBudget?: AiBudgetTracker;
+  /** Override del provider di ricerca (fake nei test). */
+  searchProvider?: SearchProvider;
+  /** Override del fetch usato dal prospecting per scaricare i siti (test). */
+  searchFetchImpl?: typeof fetch;
   /** Override delle repository (Postgres in produzione, memory nei test). */
   repos?: Repositories;
+}
+
+/** Provider di ricerca Brave, o disabilitato se manca la chiave. */
+export function buildSearchProvider(serverEnv: ServerEnv): SearchProvider {
+  if (!serverEnv.BRAVE_SEARCH_API_KEY) {
+    return new DisabledSearchProvider();
+  }
+  return new BraveSearchProvider({
+    apiKey: serverEnv.BRAVE_SEARCH_API_KEY,
+    country: serverEnv.BRAVE_SEARCH_COUNTRY,
+  });
 }
 
 export function buildAiProvider(aiEnv: AiEnv): AIProvider {
@@ -77,9 +98,13 @@ export async function buildServer(
   const authService = new AuthService({ repos, tokenConfig });
   const requireAuth = createAuthGuard(repos, tokenConfig);
 
+  // Provider AI condiviso tra le rotte /ai e /prospecting (una sola istanza).
+  const aiProvider = options.aiProvider ?? buildAiProvider(aiEnv);
+  const searchProvider: SearchProvider = options.searchProvider ?? buildSearchProvider(serverEnv);
+
   registerHealthRoutes(app);
   registerAiRoutes(app, {
-    provider: options.aiProvider ?? buildAiProvider(aiEnv),
+    provider: aiProvider,
     budget:
       options.aiBudget ??
       new AiBudgetTracker({
@@ -87,6 +112,12 @@ export async function buildServer(
         perRequestTokens: aiEnv.AI_REQUEST_TOKEN_LIMIT,
       }),
     requireAuth,
+  });
+  registerProspectingRoutes(app, {
+    searchProvider,
+    aiProvider,
+    requireAuth,
+    ...(options.searchFetchImpl ? { fetchImpl: options.searchFetchImpl } : {}),
   });
   registerAuthRoutes(app, { repos, authService, requireAuth });
   registerSyncRoutes(app, { repos, requireAuth });
