@@ -1,7 +1,15 @@
 name: desktop-mac-build
 
-# Build alpha macOS dell'app desktop (non firmata: nessun certificato disponibile).
-# La matrice completa Windows/macOS/Linux con trigger su tag v* arriva nella fase 09.
+# Build macOS dell'app desktop.
+#
+# Firma: il workflow si adatta ai segreti disponibili.
+# - Con MAC_CERTIFICATE_P12 + password → firma Developer ID reale, e
+#   notarization se ci sono anche le credenziali Apple.
+# - Senza segreti → firma AD-HOC (il default), riparata dall'hook `afterSign`
+#   in apps/desktop/electron-builder.cjs.
+#
+# Nessuna firma simulata: la modalità effettiva è sempre dichiarata nel log.
+# Procedura per ottenere e caricare i segreti: docs/DESKTOP_RELEASE.md
 
 on:
   workflow_dispatch:
@@ -20,10 +28,7 @@ on:
 jobs:
   build-mac:
     runs-on: macos-latest
-    timeout-minutes: 30
-    env:
-      # Nessun tentativo di code signing: build alpha dichiaratamente non firmata.
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -40,9 +45,67 @@ jobs:
       - name: Build workspace packages and desktop bundle
         run: pnpm exec turbo run build --filter=@businessbox/desktop
 
+      # Il certificato viene importato in un keychain temporaneo dedicato,
+      # sbloccato solo per questo job. `security` non stampa mai il contenuto.
+      - name: Import Developer ID certificate
+        id: signing
+        if: ${{ secrets.MAC_CERTIFICATE_P12 != '' }}
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
+            -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+          # Fallisce se il certificato caricato non è di tipo distribuzione:
+          # un "Apple Development" produrrebbe build rifiutate da Gatekeeper
+          # sulle macchine degli utenti, senza errori in fase di build.
+          if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "Developer ID Application"; then
+            echo "::error::Il certificato importato non è un 'Developer ID Application'."
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Package macOS app (dmg + zip, arm64 + x64)
         working-directory: apps/desktop
+        env:
+          # Senza certificato: nessun tentativo di firma reale (build ad-hoc).
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.signed == 'true' && 'true' || 'false' }}
+          # Notarization: presenti solo se configurati fra i segreti.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm exec electron-builder --mac --publish never
+
+      # Prova di correttezza indipendente dai log di electron-builder.
+      - name: Verify signature
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          APP="$(find release -maxdepth 2 -name '*.app' -print -quit)"
+          echo "App: $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | grep -E 'Signature|TeamIdentifier|Identifier=' || true
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            # Con firma reale Gatekeeper deve accettare l'app: se la
+            # notarization manca, questo passo lo rende evidente subito.
+            spctl -a -vvv -t exec "$APP"
+          else
+            echo "Build AD-HOC: Gatekeeper la rifiuterà finché non sarà firmata e notarizzata."
+          fi
 
       - name: List artifacts
         run: ls -la apps/desktop/release

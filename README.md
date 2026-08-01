@@ -5,9 +5,18 @@ in Electron, barra superiore sempre pulita (1 pagina attiva + max 3 pinned), pag
 organizzate automaticamente in sidebar/WorkBox, motori di ricerca configurabili e AI
 (GLM 5.2 via OpenRouter) con chiave solo lato server.
 
-> Stato: **alpha — fasi 00–10 completate** (fase 05 AI: nucleo). Build server e
-> desktop verdi negli ambienti disponibili; test 160/160. Vedi
-> `IMPLEMENTATION_STATUS.md`, `docs/RELEASE_CHECKLIST.md`, `docs/KNOWN_ISSUES.md`.
+> Stato: **alpha — fasi 00–10 del piano completate** (fase 05 AI: nucleo). Build
+> server e desktop verdi negli ambienti disponibili; test 160/160.
+>
+> ⚠️ Le fasi misurano il piano di sviluppo, **non** la copertura della specifica di
+> prodotto: una verifica indipendente sul codice (2026-07-20) stima la copertura reale
+> delle funzionalità di `docs/PRODUCT_REQUIREMENTS.md` intorno al **35–40%**. Il core
+> browser (smart tabs, motori di ricerca, sessioni isolate, sicurezza) è solido; il
+> livello business (WorkBox come contenitore, AI oltre la pagina singola, CRM,
+> automazioni, confronto) è in gran parte schema non ancora collegato.
+>
+> Vedi `IMPLEMENTATION_STATUS.md` (sezione _Verifica indipendente_),
+> `docs/ROADMAP.md`, `docs/RELEASE_CHECKLIST.md`, `docs/KNOWN_ISSUES.md`.
 
 ## Struttura
 

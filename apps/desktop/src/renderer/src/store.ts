@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import {
   browserStateSchema,
   openSearchProposalSchema,
@@ -134,8 +135,12 @@ export function useActivePage() {
 
 /** Pagine del workspace attivo. */
 export function useWorkspacePages() {
-  return useShellStore((s) =>
-    s.browser.pages.filter((p) => p.workspaceId === s.browser.activeWorkspaceId),
+  // zustand v5: un selettore che ritorna un NUOVO array a ogni chiamata manda
+  // useSyncExternalStore in loop infinito (React #185). `useShallow` memoizza
+  // e confronta shallow, restituendo un riferimento stabile quando il contenuto
+  // non cambia.
+  return useShellStore(
+    useShallow((s) => s.browser.pages.filter((p) => p.workspaceId === s.browser.activeWorkspaceId)),
   );
 }
 

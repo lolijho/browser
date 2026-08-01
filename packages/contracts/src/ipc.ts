@@ -38,6 +38,25 @@ export const IPC_CHANNELS = {
   browserDeleteScreenshot: "browser:delete-screenshot",
   browserSetAllowAi: "browser:set-allow-ai",
   aiGetPageContext: "ai:get-page-context",
+  /**
+   * Contesto AI multi-fonte (M6): fino a 8 pagine, filtrate per `allowAI` e
+   * sanitizzate lato main. Abilita confronto tra pagine e analisi di WorkBox,
+   * che con il solo `aiGetPageContext` (mono-pagina) erano irrealizzabili.
+   */
+  aiGetContext: "ai:get-context",
+  /** Contesto AI di tutte le pagine di una WorkBox (M6). */
+  aiGetWorkBoxContext: "ai:get-workbox-context",
+  /**
+   * Avvia una chat AI. La chiamata HTTP parte dal MAIN, non dal renderer:
+   * l'access token resta nel processo principale e non è mai esposto alla UI.
+   * I chunk tornano via `IPC_EVENTS.aiChatChunk`.
+   */
+  aiChatStart: "ai:chat-start",
+  aiChatCancel: "ai:chat-cancel",
+  authGetStatus: "auth:get-status",
+  authLogin: "auth:login",
+  authRegister: "auth:register",
+  authLogout: "auth:logout",
   layoutSetContentBounds: "layout:set-content-bounds",
 } as const;
 
@@ -46,6 +65,10 @@ export const IPC_EVENTS = {
   browserState: "event:browser-state",
   uiCommand: "event:ui-command",
   openSearchProposal: "event:opensearch-proposal",
+  /** Chunk di streaming di una chat AI avviata con `aiChatStart`. */
+  aiChatChunk: "event:ai-chat-chunk",
+  /** Cambio di stato dell'autenticazione (login/logout/scadenza). */
+  authState: "event:auth-state",
 } as const;
 
 /**

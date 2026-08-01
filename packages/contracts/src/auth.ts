@@ -78,3 +78,26 @@ export const deviceSchema = z.object({
   revoked: z.boolean(),
 });
 export type Device = z.infer<typeof deviceSchema>;
+
+// --- Stato di autenticazione esposto al renderer (IPC) ---
+
+/**
+ * Stato che il renderer può conoscere. Volutamente NON contiene token: gli
+ * access/refresh token restano nel processo principale (cifrati con safeStorage)
+ * e non sono mai esposti alla UI.
+ */
+export const authStatusSchema = z.object({
+  authenticated: z.boolean(),
+  email: emailSchema.nullable(),
+  organizationId: z.string().min(1).nullable(),
+  /** L'API non è raggiungibile: la UI lo distingue da "non autenticato". */
+  offline: z.boolean().default(false),
+});
+export type AuthStatus = z.infer<typeof authStatusSchema>;
+
+/** Esito di login/registrazione: mai i token, solo lo stato risultante. */
+export const authResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), status: authStatusSchema }),
+  z.object({ ok: z.literal(false), error: z.string().min(1) }),
+]);
+export type AuthResult = z.infer<typeof authResultSchema>;

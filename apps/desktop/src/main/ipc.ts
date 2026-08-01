@@ -1,8 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { clipboard, ipcMain, type WebContents } from "electron";
 import { z } from "zod";
 import {
   IPC_CHANNELS,
+  IPC_EVENTS,
   PAGE_IPC_CHANNELS,
+  aiChatCancelRequestSchema,
+  aiChatStartRequestSchema,
+  aiContextRequestSchema,
+  aiWorkBoxContextRequestSchema,
   addCustomEngineRequestSchema,
   archivePageRequestSchema,
   clearWorkspaceDefaultRequestSchema,
@@ -30,13 +36,45 @@ import {
   setSearchDefaultRequestSchema,
   switchWorkspaceRequestSchema,
   updateCustomEngineRequestSchema,
+  loginRequestSchema,
+  registerRequestSchema,
+  type AiContextResponse,
   type AiPageContextResponse,
+  type AiSourcePayload,
+  type AuthResult,
+  type AuthStatus,
   type IpcChannel,
 } from "@businessbox/contracts";
 import { sanitizeContentForAI } from "@businessbox/ai";
 import type { ConfigurableSearchEngineManager } from "@businessbox/search";
 import type { BrowserController } from "./browser/browser-controller";
 import type { PersistenceService } from "./persistence";
+import type { AuthManager } from "./auth/auth-manager";
+import type { AiClient } from "./ai/ai-client";
+
+/** Servizi che richiedono rete/credenziali, iniettati per restare testabili. */
+export interface BrowserIpcServices {
+  auth: AuthManager;
+  ai: AiClient;
+}
+
+/** Deve combaciare con `aiSourceSchema.max(8)` lato API. */
+const MAX_AI_SOURCES = 8;
+
+type ExclusionReason = AiContextResponse["excluded"][number]["reason"];
+
+/**
+ * Normalizza l'esito di login/registrazione. Gli errori diventano un risultato
+ * tipizzato invece di un'eccezione IPC: la UI deve poter mostrare il motivo
+ * senza che il messaggio attraversi il canale come stack trace.
+ */
+async function runAuth(action: () => Promise<AuthStatus>): Promise<AuthResult> {
+  try {
+    return { ok: true, status: await action() };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 /**
  * Registra i canali IPC del browser. Ogni payload è validato con Zod e ogni
@@ -48,6 +86,7 @@ export function registerBrowserIpc(
   searchManager: ConfigurableSearchEngineManager,
   persistence: PersistenceService,
   shell: WebContents,
+  services: BrowserIpcServices,
 ): void {
   function handle<TSchema extends z.ZodType>(
     channel: IpcChannel,
@@ -182,7 +221,49 @@ export function registerBrowserIpc(
   handle(IPC_CHANNELS.browserSetAllowAi, setAllowAiRequestSchema, ({ pageId, allow }) =>
     controller.setAllowAI(pageId, allow),
   );
-  // Contesto AI: rispetta allowAI e sanitizza SEMPRE prima di uscire dal main.
+  /**
+   * Costruisce la fonte AI di una pagina. Punto unico in cui il contenuto esce
+   * dal main verso l'AI: qui si applicano SEMPRE `allowAI` e la sanitizzazione.
+   */
+  function buildSource(pageId: string): { source: AiSourcePayload } | { reason: ExclusionReason } {
+    const card = controller.getPageCard(pageId);
+    if (!card || !card.allowAI) {
+      return { reason: "ai-disabilitata" };
+    }
+    const snapshot = persistence.getSnapshotText(pageId);
+    if (!snapshot) {
+      return { reason: "nessun-contenuto" };
+    }
+    return {
+      source: {
+        id: pageId,
+        title: sanitizeContentForAI(snapshot.title).slice(0, 300),
+        url: snapshot.url.slice(0, 2048),
+        text: sanitizeContentForAI(snapshot.text).slice(0, 60_000),
+      },
+    };
+  }
+
+  /** Contesto multi-fonte con motivo di esclusione esplicito (M6). */
+  function buildContext(pageIds: readonly string[]): AiContextResponse {
+    const sources: AiSourcePayload[] = [];
+    const excluded: AiContextResponse["excluded"] = [];
+    for (const pageId of pageIds) {
+      if (sources.length >= MAX_AI_SOURCES) {
+        excluded.push({ pageId, reason: "limite-fonti" });
+        continue;
+      }
+      const built = buildSource(pageId);
+      if ("source" in built) {
+        sources.push(built.source);
+      } else {
+        excluded.push({ pageId, reason: built.reason });
+      }
+    }
+    return { sources, excluded };
+  }
+
+  // Contesto AI mono-pagina (compatibilità): rispetta allowAI e sanitizza.
   handle(
     IPC_CHANNELS.aiGetPageContext,
     pageIdRequestSchema,
@@ -191,21 +272,85 @@ export function registerBrowserIpc(
       if (!card || !card.allowAI) {
         return { allowAI: false, source: null };
       }
-      const snapshot = persistence.getSnapshotText(pageId);
-      if (!snapshot) {
-        return { allowAI: true, source: null };
-      }
-      return {
-        allowAI: true,
-        source: {
-          id: pageId,
-          title: sanitizeContentForAI(snapshot.title).slice(0, 300),
-          url: snapshot.url.slice(0, 2048),
-          text: sanitizeContentForAI(snapshot.text).slice(0, 60_000),
-        },
-      };
+      const built = buildSource(pageId);
+      return { allowAI: true, source: "source" in built ? built.source : null };
     },
   );
+
+  handle(IPC_CHANNELS.aiGetContext, aiContextRequestSchema, ({ pageIds }): AiContextResponse =>
+    buildContext(pageIds),
+  );
+
+  handle(
+    IPC_CHANNELS.aiGetWorkBoxContext,
+    aiWorkBoxContextRequestSchema,
+    ({ workBoxId }): AiContextResponse =>
+      buildContext(
+        controller
+          .getSnapshot()
+          .pages.filter((page) => page.workBoxId === workBoxId && !page.archived)
+          .map((page) => page.id),
+      ),
+  );
+
+  /**
+   * Chat AI. La richiesta HTTP parte dal main perché deve allegare l'access
+   * token: il renderer non lo vede mai. I chunk tornano come eventi correlati
+   * da `runId`, così più run concorrenti non si mescolano.
+   */
+  const activeRuns = new Map<string, AbortController>();
+
+  handle(IPC_CHANNELS.aiChatStart, aiChatStartRequestSchema, async (request) => {
+    const { sources, excluded } = buildContext(request.pageIds);
+    const runId = randomUUID();
+    const abort = new AbortController();
+    activeRuns.set(runId, abort);
+
+    void (async () => {
+      try {
+        for await (const chunk of services.ai.streamChat({
+          messages: request.messages,
+          sources,
+          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
+          signal: abort.signal,
+        })) {
+          if (shell.isDestroyed()) {
+            break;
+          }
+          shell.send(IPC_EVENTS.aiChatChunk, { runId, chunk });
+        }
+      } finally {
+        activeRuns.delete(runId);
+      }
+    })();
+
+    return { runId, sources, excluded };
+  });
+
+  handle(IPC_CHANNELS.aiChatCancel, aiChatCancelRequestSchema, ({ runId }) => {
+    activeRuns.get(runId)?.abort();
+    activeRuns.delete(runId);
+  });
+
+  // --- Autenticazione: i token restano nel main, il renderer vede solo lo stato ---
+
+  handle(IPC_CHANNELS.authGetStatus, z.object({}).optional(), () => services.auth.getStatus());
+
+  handle(IPC_CHANNELS.authLogin, loginRequestSchema, async ({ email, password }) =>
+    runAuth(() => services.auth.login(email, password)),
+  );
+
+  handle(IPC_CHANNELS.authRegister, registerRequestSchema, async ({ email, password }) =>
+    runAuth(() => services.auth.register(email, password)),
+  );
+
+  handle(IPC_CHANNELS.authLogout, z.object({}).optional(), () => services.auth.logout());
+
+  services.auth.onChange((status) => {
+    if (!shell.isDestroyed()) {
+      shell.send(IPC_EVENTS.authState, status);
+    }
+  });
   handle(IPC_CHANNELS.layoutSetContentBounds, contentBoundsSchema, (bounds) =>
     controller.setContentBounds(bounds),
   );

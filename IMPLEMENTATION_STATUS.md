@@ -18,6 +18,82 @@ Ultimo aggiornamento: 2026-07-20 — fase 10 completata (consegna alpha).
 | 09   | Test E2E, build desktop e release          | ✅ completata                       |
 | 10   | Audit finale e consegna alpha              | ✅ completata                       |
 
+> ⚠️ **Le fasi 00–10 misurano il piano di sviluppo, non la copertura della specifica
+> di prodotto.** Una verifica indipendente sul codice (2026-07-20) stima la copertura
+> reale delle funzionalità descritte in `docs/PRODUCT_REQUIREMENTS.md` intorno al
+> **35–40%**. Vedi la sezione seguente prima di considerare "completa" una funzione.
+
+## Verifica indipendente sul codice (2026-07-20)
+
+Audit condotto leggendo IPC, schema DB, main process e UI — non la documentazione.
+Criterio: una funzione è ✅ solo se **l'utente può usarla dal browser**, non se
+esistono tabella, contratto o metodo del provider.
+
+### Copertura per area di prodotto
+
+| Area                           | Copertura | Nota                                            |
+| ------------------------------ | --------- | ----------------------------------------------- |
+| Gestione intelligente schede   | ~90%      | Reale end-to-end; manca il ripristino history   |
+| Motori di ricerca              | ~85%      | Mancano i bang `!g` e i motori site-specific    |
+| Sicurezza                      | ~80%      | Sandbox, deny-by-default, download safety       |
+| Workspace con account separati | ~70%      | Isolamento sessioni reale; download condivisi   |
+| Memoria aziendale              | ~50%      | Scheletro ok, strato intelligente non collegato |
+| Privacy configurabile          | ~45%      | Redazione solida; modalità privacy inerti       |
+| Ricerca locale avanzata        | ~40%      | FTS5 reale ma popola 4 colonne su 9             |
+| Barra universale               | ~35%      | Solo `:kw`, `/alias`, URL, ricerca di default   |
+| Estrazione automatica          | ~30%      | DOM/meta sì, estrazione semantica business no   |
+| WorkBox intelligenti           | ~20%      | Contiene **solo** pagine                        |
+| AI (GLM 5.2)                   | ~15%      | 2 capacità su 18 realmente invocabili           |
+| Confronto tra pagine           | 0%        |                                                 |
+| CRM integrato                  | 0%        |                                                 |
+| Centro operativo giornaliero   | 0%        | La new tab è titolo + input, ~30 righe          |
+| Automazioni                    | 0%        |                                                 |
+| Modalità team                  | 0%        |                                                 |
+
+### Collo di bottiglia strutturale
+
+L'allowlist IPC espone **41 canali**, di cui **uno solo per l'AI**:
+`ai:get-page-context`, read-only e **mono-pagina**. Poiché il preload non espone
+`ipcRenderer` generico (scelta corretta di sicurezza), la superficie AI utilizzabile è
+chiusa per costruzione a "chiedi qualcosa sulla pagina che stai guardando". Confronto
+tra pagine, analisi WorkBox e domande sulla memoria **non sono raggiungibili**, anche
+se il backend accetterebbe fino a 8 fonti. Vedi ROADMAP → M6.
+
+### Schema presente ma non collegato (da non scambiare per funzionalità)
+
+Nessuna `INSERT` esiste in tutto il repository per: `notes`, `tasks`, `entities`,
+`page_entities`, `tags`, `page_tags`, `ai_conversations`, `ai_messages`, `ai_runs`.
+
+- `classification_rules`: la riga che crea la tabella è la **sua unica occorrenza**.
+- `provider.classify()` e `generateStructured()`: **nessun chiamante** fuori dai test.
+- Handler BullMQ (classification, summary, embedding, dedup): placeholder che loggano.
+- Colonna `page_snapshots.summary`: mai scritta; l'indice FTS la inserisce come `''`.
+- Conversazioni AI: vivono solo in `useState`, perse alla chiusura del pannello.
+- `embedding vector(1536)`: unica occorrenza nello schema; nessun embedding generato,
+  nessuna query di similarità → le query in linguaggio naturale sulla memoria non
+  sono possibili oggi.
+- `resolveAiPolicy()` e `permissionDecisionRequestSchema`: definiti, testati, mai usati.
+
+### Scostamenti rispetto ai requisiti già scritti
+
+`docs/PRODUCT_REQUIREMENTS.md` descrive un intent parser con "comando browser →
+comando AI → … → ricerca locale". Il parser reale (`packages/search/src/manager.ts`)
+riconosce **solo** `:keyword query`, `/alias query`, keyword+Tab, URL e fallback di
+ricerca. Non esistono comandi browser, comandi AI (`/riassumi`, `/confronta`,
+`/preventivo`), bang `!g`, né matching sui nomi di WorkBox: digitare "cliente rossi"
+apre una ricerca web.
+
+### Correzioni applicate in questa revisione
+
+1. Avvio su macOS (firma ad-hoc incompleta + quarantena) — v. `docs/KNOWN_ISSUES.md`.
+2. `window.businessbox` undefined: preload sandboxed che richiedeva un chunk relativo
+   → plugin `inlinePreloadChunks` in `apps/desktop/electron.vite.config.ts`.
+3. Loop di render React #185: selettore zustand v5 non memoizzato → `useShallow` in
+   `apps/desktop/src/renderer/src/store.ts`.
+
+Verifiche dopo le correzioni: `lint` ✅ · `typecheck` ✅ · `test` ✅ 38/38 (desktop) ·
+`build` ✅ con preload autonomi · app installata avviata e UI funzionante.
+
 ## Fase 10 — dettaglio (2026-07-20): audit finale e consegna alpha
 
 ### Audit eseguito
@@ -120,7 +196,7 @@ Ultimo aggiornamento: 2026-07-20 — fase 10 completata (consegna alpha).
   `${VAR:?messaggio}` (fallimento esplicito, nessun default insicuro).
 - **Dockerfile multi-stage non-root** (`infra/docker/Dockerfile.{api,worker,admin}`):
   build con `pnpm install --frozen-lockfile` + `turbo run build` + `pnpm deploy
-  --prod --legacy` (api/worker) e output `standalone` di Next (admin); runtime su
+--prod --legacy` (api/worker) e output `standalone` di Next (admin); runtime su
   utente `node`, nessun `.env` copiato (`.dockerignore`).
 - **Healthcheck reali**: api `/health/live`, admin `/api/health` (nuova route),
   worker piccolo endpoint HTTP di liveness/readiness sul loopback (nuovo, con

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { BrowserWindow, Menu, app, ipcMain, session, type Session } from "electron";
+import { BrowserWindow, Menu, app, ipcMain, safeStorage, session, type Session } from "electron";
 import { IPC_CHANNELS, IPC_EVENTS, type UiCommand } from "@businessbox/contracts";
 import { WORKSPACE_SESSION_PREFIX, BRANDING } from "@businessbox/shared";
 import { ConfigurableSearchEngineManager } from "@businessbox/search";
@@ -9,6 +9,10 @@ import { BrowserController } from "./browser/browser-controller";
 import { TabStore } from "./browser/tab-store";
 import { WorkspaceSessionManager } from "./browser/workspace-session-manager";
 import { registerBrowserIpc } from "./ipc";
+import { AuthTokenStore } from "./auth/token-store";
+import { AuthManager } from "./auth/auth-manager";
+import { AiClient } from "./ai/ai-client";
+import { apiBaseUrlFromEnvironment, isInsecureRemoteUrl } from "./config/api-url";
 import { buildApplicationMenu } from "./menu";
 import { PersistenceService } from "./persistence";
 import { PermissionManager, type PermissionKind } from "./security/permission-manager";
@@ -26,6 +30,9 @@ initCrashReporter({
 
 // Sicurezza obbligatoria (CLAUDE.md): sandbox globale per tutti i renderer.
 app.enableSandbox();
+
+/** `true` solo durante un'uscita reale dall'app: vedi `before-quit`/`close`. */
+let isQuitting = false;
 
 /** Permessi browser (fase 07): deny-by-default, decisi per dominio+workspace. */
 const permissionManager = new PermissionManager();
@@ -156,7 +163,33 @@ function createMainWindow(): void {
     onScreenshotDeleted: (pageId) => persistence.deleteScreenshot(pageId),
   });
 
-  registerBrowserIpc(controller, searchManager, persistence, shell);
+  // Autenticazione: i token vivono qui (refresh cifrato con safeStorage, access
+  // solo in memoria) e non attraversano mai il bridge verso il renderer.
+  const apiBaseUrl = apiBaseUrlFromEnvironment();
+  if (isInsecureRemoteUrl(apiBaseUrl)) {
+    // Ci viaggiano access token: in chiaro verso un host remoto è un errore di
+    // configurazione, non una preferenza.
+    logger.warn("api.insecure_url", { apiBaseUrl });
+  }
+  logger.info("api.base_url", { apiBaseUrl });
+  const authManager = new AuthManager({
+    store: new AuthTokenStore(safeStorage, join(app.getPath("userData"), "auth.bin")),
+    apiBaseUrl,
+    deviceName: `${BRANDING.productName} (${process.platform})`,
+  });
+  const aiClient = new AiClient({
+    apiBaseUrl,
+    getAccessToken: () => authManager.getAccessToken(),
+  });
+  // Ripristino sessione non bloccante: il browser resta usabile anche offline.
+  void authManager.restore().catch((error: unknown) => {
+    logger.warn("auth.restore_failed", { detail: String(error) });
+  });
+
+  registerBrowserIpc(controller, searchManager, persistence, shell, {
+    auth: authManager,
+    ai: aiClient,
+  });
 
   app.on("will-quit", () => {
     controller.dispose();
@@ -193,6 +226,19 @@ function createMainWindow(): void {
   );
 
   controller.start();
+
+  // Chiusura finestra su macOS: la nascondiamo invece di distruggerla, e la
+  // ri-mostriamo su `activate` (clic sul Dock). Ricreare la finestra
+  // chiamerebbe di nuovo `createMainWindow()`, che ri-registra gli handler IPC:
+  // `ipcMain.handle` lancia un'eccezione sul canale già presente e la finestra
+  // non si aprirebbe (bisognava uscire e riavviare). Tenere viva la finestra è
+  // anche coerente col modello a pagine persistenti/sospese del browser.
+  window.on("close", (event) => {
+    if (!isQuitting && process.platform === "darwin") {
+      event.preventDefault();
+      window.hide();
+    }
+  });
   window.on("closed", () => controller.dispose());
 
   window.once("ready-to-show", () => {
@@ -209,7 +255,23 @@ function createMainWindow(): void {
   }
 }
 
+/**
+ * User-Agent "pulito" da presentare ai siti: lo User-Agent di default di
+ * Electron contiene i token `Electron/x.y.z` e `<nome-app>/x.y.z`, che i sistemi
+ * anti-bot (es. Google) leggono come traffico automatico → CAPTCHA/blocchi.
+ * Rimuoviamo quei due token lasciando un normale UA di Chrome, conservando la
+ * versione reale di Chromium e il token di piattaforma corretto.
+ */
+function browserUserAgent(): string {
+  return app.userAgentFallback
+    .replace(/ Electron\/[0-9.]+/i, "")
+    .replace(/ \S+\/\S+ (Chrome\/)/, " $1");
+}
+
 void app.whenReady().then(() => {
+  // Presenta le pagine come Chrome standard (vedi browserUserAgent).
+  app.userAgentFallback = browserUserAgent();
+
   // Deny-by-default anche per la sessione della shell.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(false);
@@ -230,10 +292,22 @@ void app.whenReady().then(() => {
   initAutoUpdater();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // Clic sul Dock: mostra la finestra esistente (nascosta alla chiusura) o,
+    // se non c'è più, ne crea una nuova.
+    const [existing] = BrowserWindow.getAllWindows();
+    if (existing) {
+      existing.show();
+      existing.focus();
+    } else {
       createMainWindow();
     }
   });
+});
+
+// Distingue la chiusura della finestra (nascondi) dall'uscita reale dall'app
+// (Cmd+Q / menu Esci): solo dopo questo evento la finestra viene distrutta.
+app.on("before-quit", () => {
+  isQuitting = true;
 });
 
 app.on("window-all-closed", () => {

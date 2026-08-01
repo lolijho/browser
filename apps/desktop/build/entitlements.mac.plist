@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements per l'hardened runtime (richiesto dalla notarization Apple).
+
+  Chromium compila JavaScript a runtime: senza le prime due voci il processo
+  renderer viene terminato all'avvio da macOS. Sono le entitlement standard di
+  Electron, non permessi aggiuntivi concessi all'utente.
+
+  Nota: NON dichiariamo qui fotocamera/microfono/posizione. Quei permessi sono
+  gestiti a runtime dal PermissionManager (deny-by-default) e vanno aggiunti
+  solo quando esisterà la UI di richiesta esplicita (vedi ROADMAP M3): dichiarare
+  entitlement per capacità non usate allarga la superficie senza motivo.
+-->
+<plist version="1.0">
+  <dict>
+    <!-- V8 genera codice macchina a runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Richiesto da Chromium oltre alla JIT. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Electron usa variabili DYLD per caricare il proprio framework. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <!--
+      Necessario perché i preload e le librerie estratte da asarUnpack vivono
+      su disco accanto all'app e non sono sigillate nell'eseguibile principale.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
